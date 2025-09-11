@@ -707,6 +707,14 @@ int LiSendKeyboardEvent2(short keyCode, char keyAction, char modifiers, char fla
 // This function queues an UTF-8 encoded text to be sent to the remote server.
 int LiSendUtf8TextEvent(const char *text, unsigned int length);
 
+/**
+ * @brief LiSendAudioStreamEvent send data to remote host
+ * @param data encoded data,eg. opus encoded data
+ * @param length data`s length
+ * @param packetType rtpPacket type,eg. 0x61
+ * @param ssrc rtpPacket ssrc,eg. 0x12345678
+*/
+int LiSendAudioStreamEvent(const char* data, unsigned int length,unsigned  int packetType,unsigned int ssrc);
 // Button flags
 #define A_FLAG     0x1000
 #define B_FLAG     0x2000
