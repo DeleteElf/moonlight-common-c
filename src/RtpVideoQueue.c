@@ -765,9 +765,9 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
         
         // Try to submit this frame. If we haven't received enough packets,
         // this will fail and we'll keep waiting.
-        if (reconstructFrame(queue) == 0) {
+        if (reconstructFrame(queue) == 0) { //尝试读取完整的帧
             // Stage the complete FEC block for use once reassembly is complete
-            stageCompleteFecBlock(queue);
+            stageCompleteFecBlock(queue);//将完整的帧加入到已经完成FecBlock的列表中
             
             // stageCompleteFecBlock() should have consumed all pending FEC data
             LC_ASSERT(queue->pendingFecBlockList.head == NULL);

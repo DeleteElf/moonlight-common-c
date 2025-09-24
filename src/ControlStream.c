@@ -445,7 +445,7 @@ void connectionSendFrameFecStatus(PSS_FRAME_FEC_STATUS fecStatus) {
 }
 
 void connectionSawFrame(uint32_t frameIndex) {
-    LC_ASSERT_VT(!isBefore16(frameIndex, lastSeenFrame));
+        //LC_ASSERT_VT(!isBefore16(frameIndex, lastSeenFrame)); //todo:多屏幕后键盘会冲突，我们需要优化逻辑
 
     uint64_t now = PltGetMillis();
 

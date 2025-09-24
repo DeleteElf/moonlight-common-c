@@ -1013,7 +1013,6 @@ static void processRtpPayload(PNV_VIDEO_PACKET videoPacket, int length,
                 currentPos.length--;
             }
 #endif
-
             queueFragment(existingEntry, currentPos.data, currentPos.offset, currentPos.length);
         }
     }
@@ -1149,6 +1148,7 @@ void notifyFrameLost(unsigned int frameNumber, bool speculative) {
 }
 
 // Add an RTP Packet to the queue
+// 从视频流缓存中接受完整的rpt包到待解码的队列中
 void queueRtpPacket(PRTPV_QUEUE_ENTRY queueEntryPtr) {
     int dataOffset;
     RTPV_QUEUE_ENTRY queueEntry = *queueEntryPtr;
@@ -1170,7 +1170,7 @@ void queueRtpPacket(PRTPV_QUEUE_ENTRY queueEntryPtr) {
     LC_ASSERT(sizeof(LENTRY_INTERNAL) <= sizeof(RTPV_QUEUE_ENTRY));
     PLENTRY_INTERNAL existingEntry = (PLENTRY_INTERNAL)queueEntryPtr;
     existingEntry->allocPtr = queueEntry.packet;
-
+    existingEntry->entry.ssrc=queueEntry.packet->ssrc;//传递ssrc
     processRtpPayload((PNV_VIDEO_PACKET)(((char*)queueEntry.packet) + dataOffset),
                       queueEntry.length - dataOffset,
                       queueEntry.receiveTimeMs,

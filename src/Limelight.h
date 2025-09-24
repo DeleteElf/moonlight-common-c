@@ -122,6 +122,8 @@ typedef struct _LENTRY {
 
     // Size of data in bytes (never <= 0)
     int length;
+    //multi tracks support
+    int ssrc;
 
     // Buffer type (listed above, only set for H.264 and HEVC formats)
     int bufferType;

@@ -5,7 +5,7 @@
 
 #define FIRST_FRAME_PORT 47996
 
-static std::vector<RTP_VIDEO_QUEUE> rtpQueues;
+static PRTP_VIDEO_QUEUE rtpQueues;
 //static RTP_VIDEO_QUEUE rtpQueue;
 
 static SOCKET rtpSocket = INVALID_SOCKET;
@@ -38,10 +38,11 @@ static bool receivedFullFrame;
 // Initialize the video stream
 void initializeVideoStream(int displayCount) {
     initializeVideoDepacketizer(StreamConfig.packetSize);
+    rtpQueues=malloc(sizeof(RTP_VIDEO_QUEUE)*displayCount);
     for (int i = 0; i < displayCount; ++i) {
         RTP_VIDEO_QUEUE rtpQueue;
         RtpvInitializeQueue(&rtpQueue);
-        rtpQueues.push_back(rtpQueue);
+        rtpQueues[i]=rtpQueue;
     }
 //    RtpvInitializeQueue(&rtpQueue);
     decryptionCtx = PltCreateCryptoContext();
@@ -55,10 +56,10 @@ void destroyVideoStream() {
     PltDestroyCryptoContext(decryptionCtx);
     destroyVideoDepacketizer();
 //    RtpvCleanupQueue(&rtpQueue);
-    for (int i = 0; i < rtpQueues.size(); ++i) {
+    for (int i = 0; i < sizeof(rtpQueues); ++i) {
         RtpvCleanupQueue(&rtpQueues[i]);
     }
-    rtpQueues.clear();
+    free(rtpQueues);
 }
 
 // UDP Ping proc
