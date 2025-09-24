@@ -5,7 +5,8 @@
 
 #define FIRST_FRAME_PORT 47996
 
-static RTP_VIDEO_QUEUE rtpQueue;
+static std::vector<RTP_VIDEO_QUEUE> rtpQueues;
+//static RTP_VIDEO_QUEUE rtpQueue;
 
 static SOCKET rtpSocket = INVALID_SOCKET;
 static SOCKET firstFrameSocket = INVALID_SOCKET;
@@ -35,9 +36,14 @@ static bool receivedFullFrame;
 #define RTP_RECV_PACKETS_BUFFERED 2048
 
 // Initialize the video stream
-void initializeVideoStream(void) {
+void initializeVideoStream(int displayCount) {
     initializeVideoDepacketizer(StreamConfig.packetSize);
-    RtpvInitializeQueue(&rtpQueue);
+    for (int i = 0; i < displayCount; ++i) {
+        RTP_VIDEO_QUEUE rtpQueue;
+        RtpvInitializeQueue(&rtpQueue);
+        rtpQueues.push_back(rtpQueue);
+    }
+//    RtpvInitializeQueue(&rtpQueue);
     decryptionCtx = PltCreateCryptoContext();
     receivedDataFromPeer = false;
     firstDataTimeMs = 0;
@@ -45,10 +51,14 @@ void initializeVideoStream(void) {
 }
 
 // Clean up the video stream
-void destroyVideoStream(void) {
+void destroyVideoStream() {
     PltDestroyCryptoContext(decryptionCtx);
     destroyVideoDepacketizer();
-    RtpvCleanupQueue(&rtpQueue);
+//    RtpvCleanupQueue(&rtpQueue);
+    for (int i = 0; i < rtpQueues.size(); ++i) {
+        RtpvCleanupQueue(&rtpQueues[i]);
+    }
+    rtpQueues.clear();
 }
 
 // UDP Ping proc
@@ -208,7 +218,7 @@ static void VideoReceiveThreadProc(void* context) {
             // couldn't already do. If they're not on-link, we just throw their malicious
             // traffic away (as mentioned in the paragraph above) and continue accepting
             // legitmate video traffic.
-            if (encHeader->frameNumber && LE32(encHeader->frameNumber) < RtpvGetCurrentFrameNumber(&rtpQueue)) {
+            if (encHeader->frameNumber && LE32(encHeader->frameNumber) < RtpvGetCurrentFrameNumber(&rtpQueues[0])) { //先不考虑加密，先都执行到第0个,目前的moonlight加密协议中，没有保留多条流的支持，如果启用加密，则只能暂时支持一个窗口，否则协议不兼容
                 continue;
             }
 
@@ -228,9 +238,7 @@ static void VideoReceiveThreadProc(void* context) {
         packet->sequenceNumber = BE16(packet->sequenceNumber);
         packet->timestamp = BE32(packet->timestamp);
         packet->ssrc = BE32(packet->ssrc);
-
-        queueStatus = RtpvAddPacket(&rtpQueue, packet, err, (PRTPV_QUEUE_ENTRY)&buffer[decryptedSize]);
-
+        queueStatus = RtpvAddPacket(&rtpQueues[packet->ssrc], packet, err, (PRTPV_QUEUE_ENTRY)&buffer[decryptedSize]);
         if (queueStatus == RTPF_RET_QUEUED) {
             // The queue owns the buffer
             buffer = NULL;

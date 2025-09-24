@@ -48,7 +48,7 @@ typedef struct _STREAM_CONFIGURATION {
 
     // FPS of the desired video stream
     int fps;
-
+    int displayCount;
     // Bitrate of the desired video stream (audio adds another ~1 Mbps). This
     // includes error correction data, so the actual encoder bitrate will be
     // about 20% lower when using the standard 20% FEC configuration.

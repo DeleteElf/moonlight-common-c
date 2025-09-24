@@ -135,7 +135,7 @@ void stopVideoDepacketizer(void);
 void requestDecoderRefresh(void);
 void notifyFrameLost(unsigned int frameNumber, bool speculative);
 
-void initializeVideoStream(void);
+void initializeVideoStream(int displayCount);
 void destroyVideoStream(void);
 void notifyKeyFrameReceived(void);
 int startVideoStream(void* rendererContext, int drFlags);
