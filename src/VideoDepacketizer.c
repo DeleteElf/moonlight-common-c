@@ -67,8 +67,10 @@ void initializeVideoDepacketizer(int pktSize,int trackCount) {
     depacketizers= malloc(sizeof(VIDEO_DEPACKETIZER)*trackCount);//多少个轨道，我们就需要多少个解包器
     for (int i = 0; i < trackCount; ++i) {
         VIDEO_DEPACKETIZER depacketizer;
+        LbqInitializeLinkedBlockingQueue(&depacketizer.decodeUnitQueue, 15);
         depacketizer.trackIndex=i;
         depacketizer.startFrameNumber = 0;
+        depacketizer.nextFrameNumber=1;//check every pkt
         depacketizer.waitingForNextSuccessfulFrame = false;
         depacketizer.waitingForIdrFrame = true;
         depacketizer.waitingForRefInvalFrame = false;
@@ -82,7 +84,10 @@ void initializeVideoDepacketizer(int pktSize,int trackCount) {
         depacketizer.dropStatePending = false;
         depacketizer.idrFrameProcessed = false;
         depacketizer.strictIdrFrameWait = !isReferenceFrameInvalidationEnabled();
-        LbqInitializeLinkedBlockingQueue(&depacketizer.decodeUnitQueue, 15);
+        depacketizer.nalChainHead = NULL; //before first frame it must NULL
+        depacketizer.nalChainTail = NULL; //before first frame it must NULL
+        depacketizer.nalChainDataLength = 0;
+
         depacketizers[i]=depacketizer;
     }
 }
@@ -771,7 +776,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
 
     streamPacketIndex = videoPacket->streamPacketIndex;
     
-    // Drop packets from a previously corrupt frame
+    // Drop packets from a previously corrupt frame 丢弃先前损坏帧中的数据包
     if (isBefore32(frameIndex, depacketizer->nextFrameNumber)) {
         return;
     }
