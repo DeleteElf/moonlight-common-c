@@ -64,7 +64,7 @@ void initializeVideoDepacketizer(int pktSize,int trackCount) {
     if(depacketizers!=NULL){
         free(depacketizers);
     }
-    depacketizers= malloc(sizeof(PVIDEO_DEPACKETIZER)*trackCount);//多少个轨道，我们就需要多少个解包器
+    depacketizers= malloc(sizeof(VIDEO_DEPACKETIZER)*trackCount);//多少个轨道，我们就需要多少个解包器
     for (int i = 0; i < trackCount; ++i) {
         VIDEO_DEPACKETIZER depacketizer;
         depacketizer.trackIndex=i;
