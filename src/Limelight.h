@@ -854,7 +854,7 @@ int LiFindExternalAddressIP4(const char* stunServer, unsigned short stunPort, un
 
 // Returns the number of queued video frames ready for delivery. Only relevant
 // if CAPABILITY_DIRECT_SUBMIT is not set for the video renderer.
-int LiGetPendingVideoFrames(void);
+int LiGetPendingVideoFrames(int trackIndex);
 
 // Returns the number of queued audio frames ready for delivery. Only relevant
 // if CAPABILITY_DIRECT_SUBMIT is not set for the audio renderer. For most uses,
@@ -925,11 +925,11 @@ unsigned int LiTestClientConnectivity(const char* testServer, unsigned short ref
 //
 // In order to safely use these functions, you must set CAPABILITY_PULL_RENDERER on the video decoder.
 typedef void* VIDEO_FRAME_HANDLE;
-bool LiWaitForNextVideoFrame(VIDEO_FRAME_HANDLE* frameHandle, PDECODE_UNIT* decodeUnit);
-bool LiPollNextVideoFrame(VIDEO_FRAME_HANDLE* frameHandle, PDECODE_UNIT* decodeUnit);
-bool LiPeekNextVideoFrame(PDECODE_UNIT* decodeUnit);
-void LiWakeWaitForVideoFrame(void);
-void LiCompleteVideoFrame(VIDEO_FRAME_HANDLE handle, int drStatus);
+bool LiWaitForNextVideoFrame(VIDEO_FRAME_HANDLE* frameHandle, PDECODE_UNIT* decodeUnit,int trackIndex);
+bool LiPollNextVideoFrame(VIDEO_FRAME_HANDLE* frameHandle, PDECODE_UNIT* decodeUnit,int trackIndex);
+bool LiPeekNextVideoFrame(PDECODE_UNIT* decodeUnit,int trackIndex);
+void LiWakeWaitForVideoFrame(int trackIndex);
+void LiCompleteVideoFrame(VIDEO_FRAME_HANDLE handle, int drStatus,int trackIndex);
 
 // This function returns the last reported HDR mode from the host PC.
 // See ConnListenerSetHdrMode() for more details.

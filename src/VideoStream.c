@@ -37,7 +37,7 @@ static bool receivedFullFrame;
 
 // Initialize the video stream
 void initializeVideoStream(int displayCount) {
-    initializeVideoDepacketizer(StreamConfig.packetSize);
+    initializeVideoDepacketizer(StreamConfig.packetSize,displayCount);
     rtpQueues=malloc(sizeof(RTP_VIDEO_QUEUE)*displayCount);
     for (int i = 0; i < displayCount; ++i) {
         RTP_VIDEO_QUEUE rtpQueue;
@@ -262,15 +262,16 @@ void notifyKeyFrameReceived(void) {
 
 // Decoder thread proc
 static void VideoDecoderThreadProc(void* context) {
+    int trackIndex=0;
     while (!PltIsThreadInterrupted(&decoderThread)) {
         VIDEO_FRAME_HANDLE frameHandle;
         PDECODE_UNIT decodeUnit;
-
-        if (!LiWaitForNextVideoFrame(&frameHandle, &decodeUnit)) {
+        //todo:暂时写死ssrc是0，稍后需要修改成实际的displayIndex
+        if (!LiWaitForNextVideoFrame(&frameHandle, &decodeUnit,trackIndex)) {
             return;
         }
 
-        LiCompleteVideoFrame(frameHandle, VideoCallbacks.submitDecodeUnit(decodeUnit));
+        LiCompleteVideoFrame(frameHandle, VideoCallbacks.submitDecodeUnit(decodeUnit),trackIndex);
     }
 }
 
@@ -358,7 +359,7 @@ int startVideoStream(void* rendererContext, int drFlags) {
     }
 
     if ((VideoCallbacks.capabilities & (CAPABILITY_DIRECT_SUBMIT | CAPABILITY_PULL_RENDERER)) == 0) {
-        err = PltCreateThread("VideoDec", VideoDecoderThreadProc, NULL, &decoderThread);
+        err = PltCreateThread("VideoDec", VideoDecoderThreadProc, NULL, &decoderThread);//todo:这里需要传递正确的上下文进去，以获得displayIndex
         if (err != 0) {
             VideoCallbacks.stop();
             PltInterruptThread(&receiveThread);

@@ -127,13 +127,14 @@ void flushInputOnControlStream(void);
 bool isControlDataInTransit(void);
 
 int performRtspHandshake(PSERVER_INFORMATION serverInfo);
-
-void initializeVideoDepacketizer(int pktSize);
+//初始化解包器
+void initializeVideoDepacketizer(int pktSize,int trackCount);
+//销毁解包器
 void destroyVideoDepacketizer(void);
-void queueRtpPacket(PRTPV_QUEUE_ENTRY queueEntry);
+void queueRtpPacket(int trackIndex,PRTPV_QUEUE_ENTRY queueEntry);
 void stopVideoDepacketizer(void);
-void requestDecoderRefresh(void);
-void notifyFrameLost(unsigned int frameNumber, bool speculative);
+void requestDecoderRefresh(int trackIndex);
+void notifyFrameLost(int trackIndex,unsigned int frameNumber, bool speculative);
 
 void initializeVideoStream(int displayCount);
 void destroyVideoStream(void);
