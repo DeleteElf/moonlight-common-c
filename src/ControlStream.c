@@ -1455,11 +1455,12 @@ static void requestIdrFrameFunc(void* context) {
     while (!PltIsThreadInterrupted(&requestIdrFrameThread)) {
         PltWaitForEvent(&idrFrameRequiredEvent);
         PltClearEvent(&idrFrameRequiredEvent);
-        //不使用事件结构，因为我们需要传递到底是哪条流需要
+
         if (stopping) {
             // Bail if we're stopping
             return;
         }
+
         // Any pending reference frame invalidation requests are now redundant
         freeBasicLbqList(LbqFlushQueueItems(&invalidReferenceFrameTuples));
         for (int i = 0; i < sizeof (idrEvents); ++i) {

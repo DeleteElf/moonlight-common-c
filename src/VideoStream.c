@@ -6,6 +6,7 @@
 #define FIRST_FRAME_PORT 47996
 
 static PRTP_VIDEO_QUEUE rtpQueues;
+static int rtpQueueCount;
 //static RTP_VIDEO_QUEUE rtpQueue;
 
 static SOCKET rtpSocket = INVALID_SOCKET;
@@ -38,8 +39,9 @@ static bool receivedFullFrame;
 // Initialize the video stream
 void initializeVideoStream(int displayCount) {
     initializeVideoDepacketizer(StreamConfig.packetSize,displayCount);
-    rtpQueues=malloc(sizeof(RTP_VIDEO_QUEUE)*displayCount);
-    for (int i = 0; i < displayCount; ++i) {
+    rtpQueueCount=displayCount;
+    rtpQueues=malloc(sizeof(RTP_VIDEO_QUEUE)*rtpQueueCount);
+    for (int i = 0; i < rtpQueueCount; ++i) {
         RTP_VIDEO_QUEUE rtpQueue;
         RtpvInitializeQueue(&rtpQueue);
         rtpQueues[i]=rtpQueue;
@@ -56,7 +58,8 @@ void destroyVideoStream() {
     PltDestroyCryptoContext(decryptionCtx);
     destroyVideoDepacketizer();
 //    RtpvCleanupQueue(&rtpQueue);
-    for (int i = 0; i < sizeof(rtpQueues); ++i) {
+    // int size=sizeof(*rtpQueues);
+    for (int i = 0; i < rtpQueueCount; ++i) {
         RtpvCleanupQueue(&rtpQueues[i]);
     }
     free(rtpQueues);

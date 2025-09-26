@@ -197,7 +197,6 @@ int LbqPollQueueElement(PLINKED_BLOCKING_QUEUE queueHead, void** data) {
     return LBQ_SUCCESS;
 }
 
-//ssrc如果传递-1，表示不用验证
 int LbqWaitForQueueElement(PLINKED_BLOCKING_QUEUE queueHead, void** data) {
     PLINKED_BLOCKING_QUEUE_ENTRY entry;
 

@@ -27,8 +27,7 @@ void RtpvInitializeQueue(PRTP_VIDEO_QUEUE queue) {
 static void purgeListEntries(PRTPV_QUEUE_LIST list) {
     while (list->head != NULL) {
         PRTPV_QUEUE_ENTRY entry = list->head;
-        if(list->head!=entry->next)//避免死循环
-          list->head = entry->next;
+        list->head = entry->next;
         free(entry->packet);
     }
 

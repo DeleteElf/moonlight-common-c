@@ -32,6 +32,12 @@ typedef struct _VIDEO_DEPACKETIZER {
     int trackIndex;
 } VIDEO_DEPACKETIZER, *PVIDEO_DEPACKETIZER;
 
+typedef struct _VIDEO_DEPACKETIZERS {
+    PVIDEO_DEPACKETIZER data;
+    int trackCount;
+} VIDEO_DEPACKETIZERS, *PVIDEO_DEPACKETIZERS;
+
+
 typedef struct _BUFFER_DESC {
     char* data;
     unsigned int offset;
@@ -58,13 +64,19 @@ typedef struct _LENTRY_INTERNAL {
 #define HEVC_NAL_TYPE_FILLER 38
 #define HEVC_NAL_TYPE_SEI 39
 
-static PVIDEO_DEPACKETIZER depacketizers;
+static PVIDEO_DEPACKETIZERS depacketizers;
 // Init
 void initializeVideoDepacketizer(int pktSize,int trackCount) {
-    if(depacketizers!=NULL){
-        free(depacketizers);
+    if(depacketizers==NULL){
+        depacketizers= malloc(sizeof(VIDEO_DEPACKETIZERS));
+        depacketizers->data=NULL;
     }
-    depacketizers= malloc(sizeof(VIDEO_DEPACKETIZER)*trackCount);//多少个轨道，我们就需要多少个解包器
+    depacketizers->trackCount=trackCount;
+    if(depacketizers->data!=NULL){
+        free(depacketizers->data);
+    }
+    depacketizers->data= malloc(sizeof(VIDEO_DEPACKETIZER)*trackCount);//多少个轨道，我们就需要多少个解包器
+
     for (int i = 0; i < trackCount; ++i) {
         VIDEO_DEPACKETIZER depacketizer;
         LbqInitializeLinkedBlockingQueue(&depacketizer.decodeUnitQueue, 15);
@@ -88,7 +100,7 @@ void initializeVideoDepacketizer(int pktSize,int trackCount) {
         depacketizer.nalChainTail = NULL; //before first frame it must NULL
         depacketizer.nalChainDataLength = 0;
 
-        depacketizers[i]=depacketizer;
+        depacketizers->data[i]=depacketizer;
     }
 }
 
@@ -151,16 +163,18 @@ static void freeDecodeUnitList(PLINKED_BLOCKING_QUEUE_ENTRY entry,int trackIndex
 }
 
 void stopVideoDepacketizer(void) {
-    for (int i = 0; i < sizeof(depacketizers); ++i) {
-        LbqSignalQueueShutdown(&depacketizers[i].decodeUnitQueue);
+    int size=depacketizers->trackCount;
+    for (int i = 0; i < size; ++i) {
+        LbqSignalQueueShutdown(&depacketizers->data[i].decodeUnitQueue);
     }
 }
 
 // Cleanup video depacketizer and free malloced memory
 void destroyVideoDepacketizer(void) {
-    for (int i = 0; i < sizeof(depacketizers); ++i) {
-        freeDecodeUnitList(LbqDestroyLinkedBlockingQueue(&depacketizers[i].decodeUnitQueue),i);
-        cleanupFrameState(&depacketizers[i]);
+    int size=depacketizers->trackCount;
+    for (int i = 0; i < size; ++i) {
+        freeDecodeUnitList(LbqDestroyLinkedBlockingQueue(&depacketizers->data[i].decodeUnitQueue),i);
+        cleanupFrameState(&depacketizers->data[i]);
     }
 }
 
@@ -245,11 +259,11 @@ void validateDecodeUnitForPlayback(VIDEO_DEPACKETIZER depacketizer,PDECODE_UNIT 
 
 bool LiWaitForNextVideoFrame(VIDEO_FRAME_HANDLE* frameHandle, PDECODE_UNIT* decodeUnit,int trackIndex) {
     PQUEUED_DECODE_UNIT qdu;
-    int err = LbqWaitForQueueElement(&depacketizers[trackIndex].decodeUnitQueue, (void**)&qdu);
+    int err = LbqWaitForQueueElement(&depacketizers->data[trackIndex].decodeUnitQueue, (void**)&qdu);
     if (err != LBQ_SUCCESS) {
         return false;
     }
-    validateDecodeUnitForPlayback(depacketizers[trackIndex],&qdu->decodeUnit);
+    validateDecodeUnitForPlayback(depacketizers->data[trackIndex],&qdu->decodeUnit);
 
     *frameHandle = qdu;
     *decodeUnit = &qdu->decodeUnit;
@@ -259,11 +273,11 @@ bool LiWaitForNextVideoFrame(VIDEO_FRAME_HANDLE* frameHandle, PDECODE_UNIT* deco
 bool LiPollNextVideoFrame(VIDEO_FRAME_HANDLE* frameHandle, PDECODE_UNIT* decodeUnit,int trackIndex) {
     PQUEUED_DECODE_UNIT qdu;
 
-    int err = LbqPollQueueElement(&depacketizers[trackIndex].decodeUnitQueue, (void**)&qdu);
+    int err = LbqPollQueueElement(&depacketizers->data[trackIndex].decodeUnitQueue, (void**)&qdu);
     if (err != LBQ_SUCCESS) {
         return false;
     }
-    validateDecodeUnitForPlayback(depacketizers[trackIndex],&qdu->decodeUnit);
+    validateDecodeUnitForPlayback(depacketizers->data[trackIndex],&qdu->decodeUnit);
     *frameHandle = qdu;
     *decodeUnit = &qdu->decodeUnit;
     return true;
@@ -272,19 +286,19 @@ bool LiPollNextVideoFrame(VIDEO_FRAME_HANDLE* frameHandle, PDECODE_UNIT* decodeU
 bool LiPeekNextVideoFrame(PDECODE_UNIT* decodeUnit,int trackIndex) {
     PQUEUED_DECODE_UNIT qdu;
 
-    int err = LbqPeekQueueElement(&depacketizers[trackIndex].decodeUnitQueue, (void**)&qdu);
+    int err = LbqPeekQueueElement(&depacketizers->data[trackIndex].decodeUnitQueue, (void**)&qdu);
     if (err != LBQ_SUCCESS) {
         return false;
     }
 
-    validateDecodeUnitForPlayback(depacketizers[trackIndex],&qdu->decodeUnit);
+    validateDecodeUnitForPlayback(depacketizers->data[trackIndex],&qdu->decodeUnit);
 
     *decodeUnit = &qdu->decodeUnit;
     return true;
 }
 
 void LiWakeWaitForVideoFrame(int trackIndex) {
-    LbqSignalQueueUserWake(&depacketizers[trackIndex].decodeUnitQueue);
+    LbqSignalQueueUserWake(&depacketizers->data[trackIndex].decodeUnitQueue);
 }
 
 // Cleanup a decode unit by freeing the buffer chain and the holder
@@ -299,7 +313,7 @@ void LiCompleteVideoFrame(VIDEO_FRAME_HANDLE handle, int drStatus,int trackIndex
     else if (drStatus == DR_OK && qdu->decodeUnit.frameType == FRAME_TYPE_IDR) {
         // Remember that the IDR frame was processed. We can now use
         // reference frame invalidation.
-        depacketizers[trackIndex].idrFrameProcessed = true;
+        depacketizers->data[trackIndex].idrFrameProcessed = true;
     }
 
     while (qdu->decodeUnit.bufferList != NULL) {
@@ -720,16 +734,16 @@ static void processAvcHevcRtpPayloadSlow(PVIDEO_DEPACKETIZER depacketizer,PBUFFE
 // Dumps the decode unit queue and ensures the next frame submitted to the decoder will be an IDR frame
 void requestDecoderRefresh(int trackIndex) {
     // Wait for the next IDR frame
-    depacketizers[trackIndex].waitingForIdrFrame = true;
+    depacketizers->data[trackIndex].waitingForIdrFrame = true;
     
     // Flush the decode unit queue
-    freeDecodeUnitList(LbqFlushQueueItems(&depacketizers[trackIndex].decodeUnitQueue),trackIndex);
+    freeDecodeUnitList(LbqFlushQueueItems(&depacketizers->data[trackIndex].decodeUnitQueue),trackIndex);
     
     // Request the receive thread drop its state
     // on the next call. We can't do it here because
     // it may be trying to queue DUs and we'll nuke
     // the state out from under it.
-    depacketizers[trackIndex].dropStatePending = true;
+    depacketizers->data[trackIndex].dropStatePending = true;
     
     // Request the IDR frame
     LiRequestIdrFrame(trackIndex);//todo:如果需要的化，可以分屏幕送idr的请求
@@ -1179,7 +1193,7 @@ void queueRtpPacket(int trackIndex,PRTPV_QUEUE_ENTRY queueEntryPtr) {
     PLENTRY_INTERNAL existingEntry = (PLENTRY_INTERNAL)queueEntryPtr;
     existingEntry->allocPtr = queueEntry.packet;
     existingEntry->entry.ssrc=queueEntry.packet->ssrc;//传递ssrc
-    processRtpPayload(&depacketizers[trackIndex],(PNV_VIDEO_PACKET)(((char*)queueEntry.packet) + dataOffset),
+    processRtpPayload(&depacketizers->data[trackIndex],(PNV_VIDEO_PACKET)(((char*)queueEntry.packet) + dataOffset),
                       queueEntry.length - dataOffset,
                       queueEntry.receiveTimeMs,
                       queueEntry.presentationTimeMs,
@@ -1192,5 +1206,5 @@ void queueRtpPacket(int trackIndex,PRTPV_QUEUE_ENTRY queueEntryPtr) {
 }
 
 int LiGetPendingVideoFrames(int trackIndex) {
-    return LbqGetItemCount(&depacketizers[trackIndex].decodeUnitQueue);
+    return LbqGetItemCount(&depacketizers->data[trackIndex].decodeUnitQueue);
 }
