@@ -86,6 +86,11 @@ typedef struct _QUEUED_ASYNC_CALLBACK {
     LINKED_BLOCKING_QUEUE_ENTRY entry;
 } QUEUED_ASYNC_CALLBACK, *PQUEUED_ASYNC_CALLBACK;
 
+typedef struct _IDR_EVENT{
+    int trackIndex;
+    bool signal;
+}IDR_EVENT,*P_IDR_EVENT;
+
 static SOCKET ctlSock = INVALID_SOCKET;
 static ENetHost* client;
 static ENetPeer* peer;
@@ -296,9 +301,21 @@ static bool supportsIdrFrameRequest;
 #define LOSS_REPORT_INTERVAL_MS 50
 #define PERIODIC_PING_INTERVAL_MS 100
 
+static P_IDR_EVENT idrEvents;
+
 // Initializes the control stream
-int initializeControlStream(void) {
+int initializeControlStream(int videoTrackCount) {
     stopping = false;
+    if(idrEvents!=NULL) {
+        free(idrEvents);
+    }
+    idrEvents= malloc(sizeof(IDR_EVENT)*videoTrackCount);
+    for (int i = 0; i < videoTrackCount; ++i) {
+        IDR_EVENT event;
+        event.trackIndex=i;
+        event.signal=false;
+        idrEvents[i]=event;
+    }
     PltCreateEvent(&idrFrameRequiredEvent);
     LbqInitializeLinkedBlockingQueue(&invalidReferenceFrameTuples, 20);
     LbqInitializeLinkedBlockingQueue(&frameFecStatusQueue, 8); // Limits number of frame status reports per periodic ping interval
@@ -382,7 +399,7 @@ void destroyControlStream(void) {
     PltDeleteMutex(&enetMutex);
 }
 
-static void queueFrameInvalidationTuple(uint32_t startFrame, uint32_t endFrame) {
+static void queueFrameInvalidationTuple(int trackIndex,uint32_t startFrame, uint32_t endFrame) {
     LC_ASSERT(startFrame <= endFrame);
 
     if (isReferenceFrameInvalidationEnabled()) {
@@ -395,31 +412,32 @@ static void queueFrameInvalidationTuple(uint32_t startFrame, uint32_t endFrame) 
                 // Too many invalidation tuples, so we need an IDR frame now
                 Limelog("RFI range list reached maximum size limit\n");
                 free(qfit);
-                LiRequestIdrFrame();
+                LiRequestIdrFrame(trackIndex);
             }
         }
         else {
-            LiRequestIdrFrame();
+            LiRequestIdrFrame(trackIndex);
         }
     }
     else {
-        LiRequestIdrFrame();
+        LiRequestIdrFrame(trackIndex);
     }
 }
 
 // Request an IDR frame on demand by the decoder
-void LiRequestIdrFrame(void) {
+void LiRequestIdrFrame(int trackIndex) {
     // Any reference frame invalidation requests should be dropped now.
     // We require a full IDR frame to recover.
     freeBasicLbqList(LbqFlushQueueItems(&invalidReferenceFrameTuples));
 
+    idrEvents[trackIndex].signal=true;//传递轨道索引
     // Request the IDR frame
     PltSetEvent(&idrFrameRequiredEvent);
 }
 
 // Invalidate reference frames lost by the network
-void connectionDetectedFrameLoss(uint32_t startFrame, uint32_t endFrame) {
-    queueFrameInvalidationTuple(startFrame, endFrame);
+void connectionDetectedFrameLoss(int trackIndex,uint32_t startFrame, uint32_t endFrame) {
+    queueFrameInvalidationTuple(trackIndex,startFrame, endFrame);
 }
 
 // When we receive a frame, update the number of our current frame
@@ -1463,7 +1481,7 @@ static void lossStatsThreadFunc(void* context) {
     }
 }
 
-static void requestIdrFrame(void) {
+static void requestIdrFrame(int trackIndex) {
     // If this server does not have a known IDR frame request
     // message, we'll accomplish the same thing by creating a
     // reference frame invalidation request.
@@ -1480,7 +1498,7 @@ static void requestIdrFrame(void) {
             payload[1] = LE64(lastSeenFrame);
         }
 
-        payload[2] = 0;
+        payload[2] = trackIndex;
 
         // Send the reference frame invalidation request and read the response
         if (!sendMessageAndDiscardReply(packetTypes[IDX_INVALIDATE_REF_FRAMES],
@@ -1568,17 +1586,21 @@ static void requestIdrFrameFunc(void* context) {
     while (!PltIsThreadInterrupted(&requestIdrFrameThread)) {
         PltWaitForEvent(&idrFrameRequiredEvent);
         PltClearEvent(&idrFrameRequiredEvent);
-
+        //不使用事件结构，因为我们需要传递到底是哪条流需要
         if (stopping) {
             // Bail if we're stopping
             return;
         }
-
         // Any pending reference frame invalidation requests are now redundant
         freeBasicLbqList(LbqFlushQueueItems(&invalidReferenceFrameTuples));
-
-        // Request the IDR frame
-        requestIdrFrame();
+        for (int i = 0; i < sizeof (idrEvents); ++i) {
+            IDR_EVENT event=idrEvents[i];
+            if(event.signal){
+                event.signal=false;
+                // Request the IDR frame
+                requestIdrFrame(event.trackIndex);
+            }
+        }
     }
 }
 

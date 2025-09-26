@@ -118,7 +118,7 @@ int initializeControlStream(void);
 int startControlStream(void);
 int stopControlStream(void);
 void destroyControlStream(void);
-void connectionDetectedFrameLoss(uint32_t startFrame, uint32_t endFrame);
+void connectionDetectedFrameLoss(int trackIndex, uint32_t startFrame, uint32_t endFrame);
 void connectionReceivedCompleteFrame(uint32_t frameIndex);
 void connectionSawFrame(uint32_t frameIndex);
 void connectionSendFrameFecStatus(PSS_FRAME_FEC_STATUS fecStatus);
