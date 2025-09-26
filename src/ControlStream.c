@@ -148,48 +148,6 @@ static PPLT_CRYPTO_CONTEXT decryptionCtx;
 #define CONTROL_STREAM_TIMEOUT_SEC 10
 #define CONTROL_STREAM_LINGER_TIMEOUT_SEC 2
 
-static const short packetTypesGen3[] = {
-    0x1407, // Request IDR frame
-    0x1410, // Start B
-    0x1404, // Invalidate reference frames
-    0x140c, // Loss Stats
-    0x1417, // Frame Stats (unused)
-    -1,     // Input data (unused)
-    -1,     // Rumble data (unused)
-    -1,     // Termination (unused)
-    -1,     // HDR mode (unused)
-    -1,     // Rumble triggers (unused)
-    -1,     // Set motion event (unused)
-    -1,     // Set RGB LED (unused)
-};
-static const short packetTypesGen4[] = {
-    0x0606, // Request IDR frame
-    0x0609, // Start B
-    0x0604, // Invalidate reference frames
-    0x060a, // Loss Stats
-    0x0611, // Frame Stats (unused)
-    -1,     // Input data (unused)
-    -1,     // Rumble data (unused)
-    -1,     // Termination (unused)
-    -1,     // HDR mode (unused)
-    -1,     // Rumble triggers (unused)
-    -1,     // Set motion event (unused)
-    -1,     // Set RGB LED (unused)
-};
-static const short packetTypesGen5[] = {
-    0x0305, // Start A
-    0x0307, // Start B
-    0x0301, // Invalidate reference frames
-    0x0201, // Loss Stats
-    0x0204, // Frame Stats (unused)
-    0x0207, // Input data
-    -1,     // Rumble data (unused)
-    -1,     // Termination (unused)
-    -1,     // HDR mode (unknown)
-    -1,     // Rumble triggers (unused)
-    -1,     // Set motion event (unused)
-    -1,     // Set RGB LED (unused)
-};
 static const short packetTypesGen7[] = {
     0x0305, // Start A
     0x0307, // Start B
@@ -220,41 +178,11 @@ static const short packetTypesGen7Enc[] = {
     0x5503, // Set Adaptive Triggers (Sunshine protocol extension)
 };
 
-static const char requestIdrFrameGen3[] = { 0, 0 };
-static const int startBGen3[] = { 0, 0, 0, 0xa };
-
-static const char requestIdrFrameGen4[] = { 0, 0 };
-static const char startBGen4[] = { 0 };
-
 static const char startAGen5[] = { 0, 0 };
 static const char startBGen5[] = { 0 };
 
 static const char requestIdrFrameGen7Enc[] = { 0, 0 };
 
-static const short payloadLengthsGen3[] = {
-    sizeof(requestIdrFrameGen3), // Request IDR frame
-    sizeof(startBGen3), // Start B
-    24, // Invalidate reference frames
-    32, // Loss Stats
-    64, // Frame Stats
-    -1, // Input data
-};
-static const short payloadLengthsGen4[] = {
-    sizeof(requestIdrFrameGen4), // Request IDR frame
-    sizeof(startBGen4), // Start B
-    24, // Invalidate reference frames
-    32, // Loss Stats
-    64, // Frame Stats
-    -1, // Input data
-};
-static const short payloadLengthsGen5[] = {
-    sizeof(startAGen5), // Start A
-    sizeof(startBGen5), // Start B
-    24, // Invalidate reference frames
-    32, // Loss Stats
-    80, // Frame Stats
-    -1, // Input data
-};
 static const short payloadLengthsGen7[] = {
     sizeof(startAGen5), // Start A
     sizeof(startBGen5), // Start B
@@ -272,18 +200,6 @@ static const short payloadLengthsGen7Enc[] = {
     -1, // Input data
 };
 
-static const char* preconstructedPayloadsGen3[] = {
-    requestIdrFrameGen3,
-    (char*)startBGen3
-};
-static const char* preconstructedPayloadsGen4[] = {
-    requestIdrFrameGen4,
-    startBGen4
-};
-static const char* preconstructedPayloadsGen5[] = {
-    startAGen5,
-    startBGen5
-};
 static const char* preconstructedPayloadsGen7[] = {
     startAGen5,
     startBGen5
@@ -324,37 +240,17 @@ int initializeControlStream(int videoTrackCount) {
 
     encryptedControlStream = APP_VERSION_AT_LEAST(7, 1, 431);
 
-    if (AppVersionQuad[0] == 3) {
-        packetTypes = (short*)packetTypesGen3;
-        payloadLengths = (short*)payloadLengthsGen3;
-        preconstructedPayloads = (char**)preconstructedPayloadsGen3;
+    if (encryptedControlStream) {
+        packetTypes = (short*)packetTypesGen7Enc;
+        payloadLengths = (short*)payloadLengthsGen7Enc;
+        preconstructedPayloads = (char**)preconstructedPayloadsGen7Enc;
         supportsIdrFrameRequest = true;
-    }
-    else if (AppVersionQuad[0] == 4) {
-        packetTypes = (short*)packetTypesGen4;
-        payloadLengths = (short*)payloadLengthsGen4;
-        preconstructedPayloads = (char**)preconstructedPayloadsGen4;
-        supportsIdrFrameRequest = true;
-    }
-    else if (AppVersionQuad[0] == 5) {
-        packetTypes = (short*)packetTypesGen5;
-        payloadLengths = (short*)payloadLengthsGen5;
-        preconstructedPayloads = (char**)preconstructedPayloadsGen5;
-        supportsIdrFrameRequest = false;
     }
     else {
-        if (encryptedControlStream) {
-            packetTypes = (short*)packetTypesGen7Enc;
-            payloadLengths = (short*)payloadLengthsGen7Enc;
-            preconstructedPayloads = (char**)preconstructedPayloadsGen7Enc;
-            supportsIdrFrameRequest = true;
-        }
-        else {
-            packetTypes = (short*)packetTypesGen7;
-            payloadLengths = (short*)payloadLengthsGen7;
-            preconstructedPayloads = (char**)preconstructedPayloadsGen7;
-            supportsIdrFrameRequest = false;
-        }
+        packetTypes = (short*)packetTypesGen7;
+        payloadLengths = (short*)payloadLengthsGen7;
+        preconstructedPayloads = (char**)preconstructedPayloadsGen7;
+        supportsIdrFrameRequest = false;
     }
 
     lastGoodFrame = 0;
@@ -687,7 +583,7 @@ static bool sendMessageEnet(short ptype, short paylen, const void* payload, uint
     ENetPacket* enetPacket;
     int err;
 
-    LC_ASSERT(AppVersionQuad[0] >= 5);
+    LC_ASSERT(AppVersionQuad[0] >= 7);
 
     // Only send reliable packets to GFE
     if (!IS_SUNSHINE()) {
@@ -838,42 +734,13 @@ static bool sendMessageTcp(short ptype, short paylen, const void* payload) {
 }
 
 static bool sendMessageAndForget(short ptype, short paylen, const void* payload, uint8_t channelId, uint32_t flags, bool moreData) {
-    bool ret;
-
-    // Unlike regular sockets, ENet sockets aren't safe to invoke from multiple
-    // threads at once. We have to synchronize them with a lock.
-    if (AppVersionQuad[0] >= 5) {
-        ret = sendMessageEnet(ptype, paylen, payload, channelId, flags, moreData);
-    }
-    else {
-        ret = sendMessageTcp(ptype, paylen, payload);
-    }
-
-    return ret;
+    return sendMessageEnet(ptype, paylen, payload, channelId, flags, moreData);
 }
 
 static bool sendMessageAndDiscardReply(short ptype, short paylen, const void* payload, uint8_t channelId, uint32_t flags, bool moreData) {
-    if (AppVersionQuad[0] >= 5) {
-        if (!sendMessageEnet(ptype, paylen, payload, channelId, flags, moreData)) {
-            return false;
-        }
+    if (!sendMessageEnet(ptype, paylen, payload, channelId, flags, moreData)) {
+        return false;
     }
-    else {
-        PNVCTL_TCP_PACKET_HEADER reply;
-
-        if (!sendMessageTcp(ptype, paylen, payload)) {
-            return false;
-        }
-
-        // Discard the response
-        reply = readNvctlPacketTcp();
-        if (reply == NULL) {
-            return false;
-        }
-
-        free(reply);
-    }
-
     return true;
 }
 
@@ -1656,7 +1523,7 @@ int stopControlStream(void) {
 
 // Called by the input stream to send a packet for Gen 5+ servers
 int sendInputPacketOnControlStream(unsigned char* data, int length, uint8_t channelId, uint32_t flags, bool moreData) {
-    LC_ASSERT(AppVersionQuad[0] >= 5);
+    LC_ASSERT(AppVersionQuad[0] >= 7);
 
     // Send the input data (no reply expected)
     if (sendMessageAndForget(packetTypes[IDX_INPUT_DATA], length, data, channelId, flags, moreData) == 0) {
@@ -1668,11 +1535,9 @@ int sendInputPacketOnControlStream(unsigned char* data, int length, uint8_t chan
 
 // Called by the input stream to flush queued packets before a batching wait
 void flushInputOnControlStream(void) {
-    if (AppVersionQuad[0] >= 5) {
-        PltLockMutex(&enetMutex);
-        enet_host_flush(client);
-        PltUnlockMutex(&enetMutex);
-    }
+    PltLockMutex(&enetMutex);
+    enet_host_flush(client);
+    PltUnlockMutex(&enetMutex);
 }
 
 bool isControlDataInTransit(void) {
@@ -1713,105 +1578,92 @@ bool LiGetEstimatedRttInfo(uint32_t* estimatedRtt, uint32_t* estimatedRttVarianc
 int startControlStream(void) {
     int err;
 
-    if (AppVersionQuad[0] >= 5) {
-        ENetAddress remoteAddress, localAddress;
-        ENetEvent event;
+    ENetAddress remoteAddress, localAddress;
+    ENetEvent event;
 
-        LC_ASSERT(ControlPortNumber != 0);
+    LC_ASSERT(ControlPortNumber != 0);
 
-        enet_address_set_address(&localAddress, (struct sockaddr *)&LocalAddr, AddrLen);
+    enet_address_set_address(&localAddress, (struct sockaddr *)&LocalAddr, AddrLen);
 #ifdef __3DS__
-        // binding to wildcard port is broken on the 3DS, so we need to define a port manually
-        enet_address_set_port(&localAddress, htons(n3ds_udp_port++));
+    // binding to wildcard port is broken on the 3DS, so we need to define a port manually
+    enet_address_set_port(&localAddress, htons(n3ds_udp_port++));
 #else
-        enet_address_set_port(&localAddress, 0); // Wildcard port
+    enet_address_set_port(&localAddress, 0); // Wildcard port
 #endif
 
-        enet_address_set_address(&remoteAddress, (struct sockaddr *)&RemoteAddr, AddrLen);
-        enet_address_set_port(&remoteAddress, ControlPortNumber);
+    enet_address_set_address(&remoteAddress, (struct sockaddr *)&RemoteAddr, AddrLen);
+    enet_address_set_port(&remoteAddress, ControlPortNumber);
 
-        // Create a client
-        client = enet_host_create(RemoteAddr.ss_family,
-                                  LocalAddr.ss_family != 0 ? &localAddress : NULL,
-                                  1, CTRL_CHANNEL_COUNT, 0, 0);
-        if (client == NULL) {
-            stopping = true;
-            return -1;
-        }
-
-        client->intercept = ignoreDisconnectIntercept;
-
-        // Enable high priority QoS marking on control stream traffic
-        //
-        // NB: It is important to do this before connecting because there's logic in the connect
-        // retransmission code to detect QoS-intolerant routes and disable QoS marking for those.
-        enet_socket_set_option (client->socket, ENET_SOCKOPT_QOS, 1);
-
-        // Connect to the host
-        peer = enet_host_connect(client, &remoteAddress, CTRL_CHANNEL_COUNT, ControlConnectData);
-        if (peer == NULL) {
-            stopping = true;
-            enet_host_destroy(client);
-            client = NULL;
-            return -1;
-        }
-
-        // Wait for the connect to complete
-        err = serviceEnetHost(client, &event, CONTROL_STREAM_TIMEOUT_SEC * 1000);
-        if (err <= 0 || event.type != ENET_EVENT_TYPE_CONNECT) {
-            if (err < 0) {
-                Limelog("Failed to establish ENet connection on UDP port %u: error %d\n", ControlPortNumber, LastSocketFail());
-            }
-            else if (err == 0) {
-                Limelog("Failed to establish ENet connection on UDP port %u: timed out\n", ControlPortNumber);
-            }
-            else {
-                Limelog("Failed to establish ENet connection on UDP port %u: unexpected event %d (error: %d)\n", ControlPortNumber, (int)event.type, LastSocketError());
-            }
-
-            stopping = true;
-            enet_peer_reset(peer);
-            peer = NULL;
-            enet_host_destroy(client);
-            client = NULL;
-
-            if (err == 0) {
-                return ETIMEDOUT;
-            }
-            else if (err > 0 && event.type != ENET_EVENT_TYPE_CONNECT && LastSocketError() == 0) {
-                // If we got an unexpected event type and have no other error to return, return the event type
-                LC_ASSERT(event.type != ENET_EVENT_TYPE_NONE);
-                return event.type != ENET_EVENT_TYPE_NONE ? (int)event.type : LastSocketFail();
-            }
-            else {
-                return LastSocketFail();
-            }
-        }
-
-        // Ensure the connect verify ACK is sent immediately
-        enet_host_flush(client);
-
-#ifdef __3DS__
-        // Set the peer timeout to 1 minute and limit backoff to 2x RTT
-        // The 3DS can take a bit longer to set up when starting fresh
-        enet_peer_timeout(peer, 2, 60000, 60000);
-#else
-        // Set the peer timeout to 10 seconds and limit backoff to 2x RTT
-        enet_peer_timeout(peer, 2, 10000, 10000);
-#endif
+    // Create a client
+    client = enet_host_create(RemoteAddr.ss_family,
+                              LocalAddr.ss_family != 0 ? &localAddress : NULL,
+                              1, CTRL_CHANNEL_COUNT, 0, 0);
+    if (client == NULL) {
+        stopping = true;
+        return -1;
     }
-    else {
-        // NB: Do NOT use ControlPortNumber here. 47995 is correct for these old versions.
-        LC_ASSERT(ControlPortNumber == 0);
-        ctlSock = connectTcpSocket(&RemoteAddr, AddrLen,
-            47995, CONTROL_STREAM_TIMEOUT_SEC);
-        if (ctlSock == INVALID_SOCKET) {
-            stopping = true;
+
+    client->intercept = ignoreDisconnectIntercept;
+
+    // Enable high priority QoS marking on control stream traffic
+    //
+    // NB: It is important to do this before connecting because there's logic in the connect
+    // retransmission code to detect QoS-intolerant routes and disable QoS marking for those.
+    enet_socket_set_option (client->socket, ENET_SOCKOPT_QOS, 1);
+
+    // Connect to the host
+    peer = enet_host_connect(client, &remoteAddress, CTRL_CHANNEL_COUNT, ControlConnectData);
+    if (peer == NULL) {
+        stopping = true;
+        enet_host_destroy(client);
+        client = NULL;
+        return -1;
+    }
+
+    // Wait for the connect to complete
+    err = serviceEnetHost(client, &event, CONTROL_STREAM_TIMEOUT_SEC * 1000);
+    if (err <= 0 || event.type != ENET_EVENT_TYPE_CONNECT) {
+        if (err < 0) {
+            Limelog("Failed to establish ENet connection on UDP port %u: error %d\n", ControlPortNumber, LastSocketFail());
+        }
+        else if (err == 0) {
+            Limelog("Failed to establish ENet connection on UDP port %u: timed out\n", ControlPortNumber);
+        }
+        else {
+            Limelog("Failed to establish ENet connection on UDP port %u: unexpected event %d (error: %d)\n", ControlPortNumber, (int)event.type, LastSocketError());
+        }
+
+        stopping = true;
+        enet_peer_reset(peer);
+        peer = NULL;
+        enet_host_destroy(client);
+        client = NULL;
+
+        if (err == 0) {
+            return ETIMEDOUT;
+        }
+        else if (err > 0 && event.type != ENET_EVENT_TYPE_CONNECT && LastSocketError() == 0) {
+            // If we got an unexpected event type and have no other error to return, return the event type
+            LC_ASSERT(event.type != ENET_EVENT_TYPE_NONE);
+            return event.type != ENET_EVENT_TYPE_NONE ? (int)event.type : LastSocketFail();
+        }
+        else {
             return LastSocketFail();
         }
-
-        enableNoDelay(ctlSock);
     }
+
+    // Ensure the connect verify ACK is sent immediately
+    enet_host_flush(client);
+
+#ifdef __3DS__
+    // Set the peer timeout to 1 minute and limit backoff to 2x RTT
+    // The 3DS can take a bit longer to set up when starting fresh
+    enet_peer_timeout(peer, 2, 60000, 60000);
+#else
+    // Set the peer timeout to 10 seconds and limit backoff to 2x RTT
+    enet_peer_timeout(peer, 2, 10000, 10000);
+#endif
+
 
     err = PltCreateThread("ControlRecv", controlReceiveThreadFunc, NULL, &controlReceiveThread);
     if (err != 0) {
