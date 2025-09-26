@@ -1380,10 +1380,12 @@ static void requestIdrFrame(int trackIndex) {
         }
     }
     else {
+        int16_t payload[1];
+        payload[0] =(int16_t)1;
         // Send IDR frame request and read the response
         if (!sendMessageAndDiscardReply(packetTypes[IDX_REQUEST_IDR_FRAME],
                                         payloadLengths[IDX_REQUEST_IDR_FRAME],
-                                        preconstructedPayloads[IDX_REQUEST_IDR_FRAME],
+                                        payload,//preconstructedPayloads[IDX_REQUEST_IDR_FRAME],//因为我们需要指定哪个轨道需要刷新，这里，我们不再使用默认
                                         CTRL_CHANNEL_URGENT,
                                         ENET_PACKET_FLAG_RELIABLE,
                                         false)) {
