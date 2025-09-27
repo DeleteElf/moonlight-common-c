@@ -58,7 +58,6 @@ void destroyVideoStream() {
     PltDestroyCryptoContext(decryptionCtx);
     destroyVideoDepacketizer();
 //    RtpvCleanupQueue(&rtpQueue);
-    // int size=sizeof(*rtpQueues);
     for (int i = 0; i < rtpQueueCount; ++i) {
         RtpvCleanupQueue(&rtpQueues[i]);
     }
