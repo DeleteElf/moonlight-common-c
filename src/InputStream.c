@@ -848,7 +848,7 @@ int LiSendMousePositionEvent(short displayIndex, short x, short y, short referen
 
         holder->packet.mouseMoveAbs.header.size = BE32(sizeof(NV_ABS_MOUSE_MOVE_PACKET) - sizeof(uint32_t));
         holder->packet.mouseMoveAbs.header.magic = LE32(MOUSE_MOVE_ABS_MAGIC);
-        holder->packet.mouseMoveAbs.unused = 0;
+        holder->packet.mouseMoveAbs.displayIndex=displayIndex;
 
         // Remaining fields are set in the input thread based on the latest currentAbsoluteMouseState values
 
