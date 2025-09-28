@@ -494,7 +494,7 @@ static void inputSendThreadProc(void* context) {
             PltLockMutex(&batchedInputMutex);
 
             // Populate the packet with the latest state
-            holder->packet.mouseMoveAbs.x = BE16(currentAbsoluteMouseState.displayIndex);
+            holder->packet.mouseMoveAbs.displayIndex = BE16(currentAbsoluteMouseState.displayIndex);
 
             holder->packet.mouseMoveAbs.x = BE16(currentAbsoluteMouseState.x);
             holder->packet.mouseMoveAbs.y = BE16(currentAbsoluteMouseState.y);
