@@ -789,7 +789,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
     LC_ASSERT_VT((flags & ~(FLAG_SOF | FLAG_EOF | FLAG_CONTAINS_PIC_DATA)) == 0);
 
     streamPacketIndex = videoPacket->streamPacketIndex;
-    
+
     // Drop packets from a previously corrupt frame 丢弃先前损坏帧中的数据包
     if (isBefore32(frameIndex, depacketizer->nextFrameNumber)) {
         return;
@@ -868,6 +868,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
     if (firstPacket && currentPos.length > 0) {
         // Parse the frame type from the header
         LC_ASSERT_VT(currentPos.length >= 4);
+
         if (APP_VERSION_AT_LEAST(7, 1, 350) && currentPos.length >= 4) {
             switch (currentPos.data[currentPos.offset + 3]) {
             case 1: // Normal P-frame
@@ -875,6 +876,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
             case 2: // IDR frame
                 // For other codecs, we trust the frame header rather than parsing the bitstream
                 // to determine if a given frame is an IDR frame.
+                //对于其他编解码器，我们信任帧头而不是解析比特流来确定给定帧是否是IDR帧。
                 if (!(NegotiatedVideoFormat & (VIDEO_FORMAT_MASK_H264 | VIDEO_FORMAT_MASK_H265))) {
                     depacketizer->waitingForIdrFrame = false;
                     depacketizer->waitingForNextSuccessfulFrame = false;
@@ -1018,6 +1020,12 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
 
     if (NegotiatedVideoFormat & (VIDEO_FORMAT_MASK_H264 | VIDEO_FORMAT_MASK_H265)) {
         if (firstPacket && isIdrFrameStart(&currentPos)) {
+        // if((*existingEntry)->entry.ssrc==1){
+            Limelog("first video packet is idr===========================>%d\n",(*existingEntry)->entry.ssrc);
+        // }else{
+        //     Limelog("depacketing video packet===========================>%d\n",(*existingEntry)->entry.ssrc);
+        // }
+
             // SPS and PPS prefix is padded between NALs, so we must decode it with the slow path
             processAvcHevcRtpPayloadSlow(depacketizer,&currentPos, existingEntry);
         }

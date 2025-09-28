@@ -586,7 +586,7 @@ int LiSendMouseMoveEvent(short deltaX, short deltaY);
 //
 // For example, if you wanted to directly pass window coordinates as x and y, you would set
 // referenceWidth and referenceHeight to your window width and height.
-int LiSendMousePositionEvent(short x, short y, short referenceWidth, short referenceHeight);
+int LiSendMousePositionEvent(short displayIndex,short x, short y, short referenceWidth, short referenceHeight);
 
 // This function queues a mouse position update event to be sent to the remote server, so
 // all of the limitations of LiSendMousePositionEvent() mentioned above apply here too!
@@ -605,7 +605,7 @@ int LiSendMousePositionEvent(short x, short y, short referenceWidth, short refer
 // This function can be useful when mouse capture is the only feasible way to receive mouse input,
 // like on Android or iOS, and the OS cannot provide raw unaccelerated mouse motion when capturing.
 // Using this function avoids double-acceleration in cases when the client motion is also accelerated.
-int LiSendMouseMoveAsMousePositionEvent(short deltaX, short deltaY, short referenceWidth, short referenceHeight);
+int LiSendMouseMoveAsMousePositionEvent(short displayIndex, short deltaX, short deltaY, short referenceWidth, short referenceHeight);
 
 // Error return value to indicate that the requested functionality is not supported by the host
 #define LI_ERR_UNSUPPORTED -5501

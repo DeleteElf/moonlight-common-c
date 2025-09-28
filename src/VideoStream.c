@@ -241,6 +241,8 @@ static void VideoReceiveThreadProc(void* context) {
         packet->sequenceNumber = BE16(packet->sequenceNumber);
         packet->timestamp = BE32(packet->timestamp);
         packet->ssrc = BE32(packet->ssrc);
+
+        // Limelog("receive video packet===========================>%d\n",packet->ssrc);
         queueStatus = RtpvAddPacket(&rtpQueues[packet->ssrc], packet, err, (PRTPV_QUEUE_ENTRY)&buffer[decryptedSize]);
         if (queueStatus == RTPF_RET_QUEUED) {
             // The queue owns the buffer

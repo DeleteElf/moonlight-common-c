@@ -1348,7 +1348,7 @@ static void lossStatsThreadFunc(void* context) {
     }
 }
 
-static void requestIdrFrame(int trackIndex) {
+static void requestIdrFrame(int trackIndex) {//todo:目前这个送得太频繁了，稍后需要控制一下速度
     // If this server does not have a known IDR frame request
     // message, we'll accomplish the same thing by creating a
     // reference frame invalidation request.
@@ -1394,8 +1394,7 @@ static void requestIdrFrame(int trackIndex) {
             return;
         }
     }
-
-    Limelog("IDR frame request sent\n");
+    Limelog("IDR frame request sent =============> d%\n",trackIndex);
 }
 
 static void requestInvalidateReferenceFrames(uint32_t startFrame, uint32_t endFrame) {

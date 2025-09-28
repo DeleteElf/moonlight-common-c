@@ -33,8 +33,9 @@ static struct {
     bool dirty; // Update ready to send (queued packet holder in packetQueue)
 } currentRelativeMouseState;
 static struct {
-    int x, y;
-    int width, height;
+    short displayIndex;
+    short x, y;
+    short width, height;
     bool dirty; // Update ready to send (queued packet holder in packetQueue)
 } currentAbsoluteMouseState;
 
@@ -493,6 +494,8 @@ static void inputSendThreadProc(void* context) {
             PltLockMutex(&batchedInputMutex);
 
             // Populate the packet with the latest state
+            holder->packet.mouseMoveAbs.x = BE16(currentAbsoluteMouseState.displayIndex);
+
             holder->packet.mouseMoveAbs.x = BE16(currentAbsoluteMouseState.x);
             holder->packet.mouseMoveAbs.y = BE16(currentAbsoluteMouseState.y);
 
@@ -813,7 +816,7 @@ int LiSendMouseMoveEvent(short deltaX, short deltaY) {
 }
 
 // Send a mouse position update to the streaming machine
-int LiSendMousePositionEvent(short x, short y, short referenceWidth, short referenceHeight) {
+int LiSendMousePositionEvent(short displayIndex, short x, short y, short referenceWidth, short referenceHeight) {
     PPACKET_HOLDER holder;
     int err;
 
@@ -824,6 +827,7 @@ int LiSendMousePositionEvent(short x, short y, short referenceWidth, short refer
     PltLockMutex(&batchedInputMutex);
 
     // Overwrite the previous mouse location with the new one
+    currentAbsoluteMouseState.displayIndex=displayIndex;
     currentAbsoluteMouseState.x = x;
     currentAbsoluteMouseState.y = y;
     currentAbsoluteMouseState.width = referenceWidth;
@@ -876,12 +880,12 @@ int LiSendMousePositionEvent(short x, short y, short referenceWidth, short refer
 }
 
 // Send a relative motion event using absolute position to the streaming machine
-int LiSendMouseMoveAsMousePositionEvent(short deltaX, short deltaY, short referenceWidth, short referenceHeight) {
+int LiSendMouseMoveAsMousePositionEvent(short displayIndex, short deltaX, short deltaY, short referenceWidth, short referenceHeight) {
     // Convert the current position to be relative to the provided reference dimensions
     short oldPositionX = (short)(absCurrentPosX * referenceWidth);
     short oldPositionY = (short)(absCurrentPosY * referenceHeight);
 
-    return LiSendMousePositionEvent(CLAMP(oldPositionX + deltaX, 0, referenceWidth),
+    return LiSendMousePositionEvent(displayIndex, CLAMP(oldPositionX + deltaX, 0, referenceWidth),
                                     CLAMP(oldPositionY + deltaY, 0, referenceHeight),
                                     referenceWidth, referenceHeight);
 }
