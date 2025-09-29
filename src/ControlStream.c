@@ -1384,7 +1384,7 @@ static void requestIdrFrame(int trackIndex) {//todo:目前这个送得太频繁�
     }
     else {
         int16_t payload[1];
-        payload[0] =(int16_t)1;
+        payload[0] =(int16_t)trackIndex;
         // Send IDR frame request and read the response
         if (!sendMessageAndDiscardReply(packetTypes[IDX_REQUEST_IDR_FRAME],
                                         payloadLengths[IDX_REQUEST_IDR_FRAME],
