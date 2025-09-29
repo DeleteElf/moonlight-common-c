@@ -71,7 +71,7 @@ void initializeVideoDepacketizer(int pktSize,int trackCount) {
         depacketizers= malloc(sizeof(VIDEO_DEPACKETIZERS));
         depacketizers->data=NULL;
     }
-    depacketizers->trackCount=trackCount;
+    depacketizers->trackCount=0;
     if(depacketizers->data!=NULL){
         free(depacketizers->data);
     }
@@ -101,6 +101,7 @@ void initializeVideoDepacketizer(int pktSize,int trackCount) {
         depacketizer.nalChainDataLength = 0;
 
         depacketizers->data[i]=depacketizer;
+        depacketizers->trackCount++;
     }
 }
 
@@ -530,7 +531,7 @@ static void reassembleFrame(PVIDEO_DEPACKETIZER depacketizer,int frameNumber) {
 
             if ((VideoCallbacks.capabilities & CAPABILITY_DIRECT_SUBMIT) == 0) {
                 if (LbqOfferQueueItem(&depacketizer->decodeUnitQueue, qdu, &qdu->entry) == LBQ_BOUND_EXCEEDED) {
-                    Limelog("Video decode unit queue overflow\n");
+                    Limelog("Video decode unit queue overflow=====> %d\n",depacketizer->trackIndex);
 
                     // RFI recovery is not supported here
                     depacketizer->waitingForIdrFrame = true;
@@ -1020,11 +1021,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
 
     if (NegotiatedVideoFormat & (VIDEO_FORMAT_MASK_H264 | VIDEO_FORMAT_MASK_H265)) {
         if (firstPacket && isIdrFrameStart(&currentPos)) {
-        // if((*existingEntry)->entry.ssrc==1){
-            Limelog("first video packet is idr===========================>%d\n",(*existingEntry)->entry.ssrc);
-        // }else{
-        //     Limelog("depacketing video packet===========================>%d\n",(*existingEntry)->entry.ssrc);
-        // }
+            Limelog("video packet is idr===========================>%d\n",(*existingEntry)->entry.ssrc);
 
             // SPS and PPS prefix is padded between NALs, so we must decode it with the slow path
             processAvcHevcRtpPayloadSlow(depacketizer,&currentPos, existingEntry);

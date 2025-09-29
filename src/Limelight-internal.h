@@ -114,7 +114,7 @@ void setRecorderCallbacks(PDECODER_RENDERER_CALLBACKS drCallbacks, PAUDIO_RENDER
 
 char* getSdpPayloadForStreamConfig(int rtspClientVersion, int* length);
 
-int initializeControlStream(void);
+int initializeControlStream(int videoTrackCount);
 int startControlStream(void);
 int stopControlStream(void);
 void destroyControlStream(void);

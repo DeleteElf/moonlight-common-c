@@ -218,20 +218,23 @@ static bool supportsIdrFrameRequest;
 #define PERIODIC_PING_INTERVAL_MS 100
 
 static P_IDR_EVENT idrEvents;
-
+static int idrEventCount;
 // Initializes the control stream
 int initializeControlStream(int videoTrackCount) {
     stopping = false;
     if(idrEvents!=NULL) {
         free(idrEvents);
     }
+    idrEventCount=0;
     idrEvents= malloc(sizeof(IDR_EVENT)*videoTrackCount);
     for (int i = 0; i < videoTrackCount; ++i) {
         IDR_EVENT event;
         event.trackIndex=i;
         event.signal=false;
         idrEvents[i]=event;
+        idrEventCount++;
     }
+
     PltCreateEvent(&idrFrameRequiredEvent);
     LbqInitializeLinkedBlockingQueue(&invalidReferenceFrameTuples, 20);
     LbqInitializeLinkedBlockingQueue(&frameFecStatusQueue, 8); // Limits number of frame status reports per periodic ping interval
@@ -1394,7 +1397,7 @@ static void requestIdrFrame(int trackIndex) {//todo:目前这个送得太频繁�
             return;
         }
     }
-    Limelog("IDR frame request sent =============> d%\n",trackIndex);
+    Limelog("IDR frame request sent =============> %d\n",trackIndex);
 }
 
 static void requestInvalidateReferenceFrames(uint32_t startFrame, uint32_t endFrame) {
@@ -1462,12 +1465,12 @@ static void requestIdrFrameFunc(void* context) {
 
         // Any pending reference frame invalidation requests are now redundant
         freeBasicLbqList(LbqFlushQueueItems(&invalidReferenceFrameTuples));
-        for (int i = 0; i < sizeof (idrEvents); ++i) {
-            IDR_EVENT event=idrEvents[i];
-            if(event.signal){
-                event.signal=false;
+        for (int i = 0; i < idrEventCount; ++i) {
+            IDR_EVENT* event=&idrEvents[i];
+            if(event->signal){
+                event->signal=false;
                 // Request the IDR frame
-                requestIdrFrame(event.trackIndex);
+                requestIdrFrame(event->trackIndex);
             }
         }
     }
