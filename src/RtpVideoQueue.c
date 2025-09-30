@@ -22,6 +22,14 @@ void RtpvInitializeQueue(PRTP_VIDEO_QUEUE queue) {
 
     queue->currentFrameNumber = 1;
     queue->multiFecCapable = APP_VERSION_AT_LEAST(7, 1, 431);
+    queue->lastSeenFrame=0;
+    queue->lastGoodFrame=0;
+    queue->firstFrameTimeMs=0;
+    queue->intervalGoodFrameCount=0;
+    queue->intervalTotalFrameCount=0;
+    queue->intervalStartTimeMs=0;
+    queue->lastIntervalLossPercentage=0;
+    queue->lastConnectionStatusUpdate=CONN_STATUS_OKAY;
 }
 
 static void purgeListEntries(PRTPV_QUEUE_LIST list) {
@@ -688,7 +696,7 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
 
         // Tell the control stream logic about this frame, even if we don't end up
         // being able to reconstruct a full frame from it.
-        connectionSawFrame(queue->currentFrameNumber);
+        connectionSawFrame(queue);
         
         queue->bufferFirstRecvTimeMs = PltGetMillis();
         queue->bufferLowestSequenceNumber = U16(packet->sequenceNumber - fecIndex);

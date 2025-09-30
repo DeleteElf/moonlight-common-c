@@ -559,7 +559,7 @@ static void reassembleFrame(PVIDEO_DEPACKETIZER depacketizer,int frameNumber) {
             }
 
             // Notify the control connection
-            connectionReceivedCompleteFrame(frameNumber);
+            connectionReceivedCompleteFrame(depacketizer->trackIndex, frameNumber);
 
             // Clear frame drops
             depacketizer->consecutiveFrameDrops = 0;

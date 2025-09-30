@@ -429,3 +429,17 @@ int startVideoStream(void* rendererContext, int drFlags) {
 
     return 0;
 }
+
+// When we receive a frame, update the number of our current frame
+void connectionReceivedCompleteFrame(int trackIndex,uint32_t frameIndex) {
+    rtpQueues[trackIndex].lastGoodFrame = frameIndex;
+    rtpQueues[trackIndex].intervalGoodFrameCount++;
+}
+
+int getLastSeenFrame(int trackIndex){
+    return rtpQueues[trackIndex].lastSeenFrame;
+}
+
+int getLastGoodFrame(int trackIndex){
+    return rtpQueues[trackIndex].lastGoodFrame;
+}

@@ -102,21 +102,12 @@ static PLT_THREAD invalidateRefFramesThread;
 static PLT_THREAD requestIdrFrameThread;
 static PLT_THREAD controlReceiveThread;
 static PLT_THREAD asyncCallbackThread;
-static uint32_t lastGoodFrame;
-static uint32_t lastSeenFrame;
 static bool stopping;
 static bool disconnectPending;
 static bool encryptedControlStream;
 static bool hdrEnabled;
 static SS_HDR_METADATA hdrMetadata;
-
-static int intervalGoodFrameCount;
-static int intervalTotalFrameCount;
-static uint64_t intervalStartTimeMs;
-static int lastIntervalLossPercentage;
-static int lastConnectionStatusUpdate;
 static uint32_t currentEnetSequenceNumber;
-static uint64_t firstFrameTimeMs;
 
 static LINKED_BLOCKING_QUEUE invalidReferenceFrameTuples;
 static LINKED_BLOCKING_QUEUE frameFecStatusQueue;
@@ -219,6 +210,7 @@ static bool supportsIdrFrameRequest;
 
 static P_IDR_EVENT idrEvents;
 static int idrEventCount;
+static int trackCount;
 // Initializes the control stream
 int initializeControlStream(int videoTrackCount) {
     stopping = false;
@@ -234,7 +226,7 @@ int initializeControlStream(int videoTrackCount) {
         idrEvents[i]=event;
         idrEventCount++;
     }
-
+    trackCount=videoTrackCount;
     PltCreateEvent(&idrFrameRequiredEvent);
     LbqInitializeLinkedBlockingQueue(&invalidReferenceFrameTuples, 20);
     LbqInitializeLinkedBlockingQueue(&frameFecStatusQueue, 8); // Limits number of frame status reports per periodic ping interval
@@ -256,15 +248,7 @@ int initializeControlStream(int videoTrackCount) {
         supportsIdrFrameRequest = false;
     }
 
-    lastGoodFrame = 0;
-    lastSeenFrame = 0;
     disconnectPending = false;
-    intervalGoodFrameCount = 0;
-    intervalTotalFrameCount = 0;
-    intervalStartTimeMs = 0;
-    lastIntervalLossPercentage = 0;
-    lastConnectionStatusUpdate = CONN_STATUS_OKAY;
-    firstFrameTimeMs = 0;
     currentEnetSequenceNumber = 0;
     usePeriodicPing = APP_VERSION_AT_LEAST(7, 1, 415);
     encryptionCtx = PltCreateCryptoContext();
@@ -339,12 +323,6 @@ void connectionDetectedFrameLoss(int trackIndex,uint32_t startFrame, uint32_t en
     queueFrameInvalidationTuple(trackIndex,startFrame, endFrame);
 }
 
-// When we receive a frame, update the number of our current frame
-void connectionReceivedCompleteFrame(uint32_t frameIndex) {
-    lastGoodFrame = frameIndex;
-    intervalGoodFrameCount++;
-}
-
 void connectionSendFrameFecStatus(PSS_FRAME_FEC_STATUS fecStatus) {
     // This is a Sunshine protocol extension
     if (!IS_SUNSHINE()) {
@@ -361,50 +339,48 @@ void connectionSendFrameFecStatus(PSS_FRAME_FEC_STATUS fecStatus) {
     }
 }
 
-void connectionSawFrame(uint32_t frameIndex) {
-        //LC_ASSERT_VT(!isBefore16(frameIndex, lastSeenFrame)); //todo:多屏幕后键盘会冲突，我们需要优化逻辑
-
+void connectionSawFrame(PRTP_VIDEO_QUEUE queue) {
+    LC_ASSERT_VT(!isBefore16(queue->currentFrameNumber,queue->lastSeenFrame));
     uint64_t now = PltGetMillis();
-
     // Suppress connection status warnings for the first sampling period
     // to allow the network and host to settle.
-    if (lastSeenFrame == 0) {
-        lastSeenFrame = frameIndex;
-        firstFrameTimeMs = now;
+    if (queue->lastSeenFrame == 0) {
+        queue->lastSeenFrame = queue->currentFrameNumber;
+        queue->firstFrameTimeMs = now;
         return;
     }
-    else if (now - firstFrameTimeMs < CONN_STATUS_SAMPLE_PERIOD) {
-        lastSeenFrame = frameIndex;
+    else if (now -  queue->firstFrameTimeMs < CONN_STATUS_SAMPLE_PERIOD) {
+        queue->lastSeenFrame = queue->currentFrameNumber;
         return;
     }
-
-    if (now - intervalStartTimeMs >= CONN_STATUS_SAMPLE_PERIOD) {
-        if (intervalTotalFrameCount != 0) {
+    uint32_t frameIndex=queue->currentFrameNumber;
+    if (now - queue->intervalStartTimeMs >= CONN_STATUS_SAMPLE_PERIOD) {
+        if (queue->intervalTotalFrameCount != 0) {
             // Notify the client of connection status changes based on frame loss rate
-            int frameLossPercent = 100 - (intervalGoodFrameCount * 100) / intervalTotalFrameCount;
-            if (lastConnectionStatusUpdate != CONN_STATUS_POOR &&
+            int frameLossPercent = 100 - (queue->intervalGoodFrameCount * 100) / queue->intervalTotalFrameCount;
+            if (queue->lastConnectionStatusUpdate != CONN_STATUS_POOR &&
                     (frameLossPercent >= CONN_IMMEDIATE_POOR_LOSS_RATE ||
-                     (frameLossPercent >= CONN_CONSECUTIVE_POOR_LOSS_RATE && lastIntervalLossPercentage >= CONN_CONSECUTIVE_POOR_LOSS_RATE))) {
+                     (frameLossPercent >= CONN_CONSECUTIVE_POOR_LOSS_RATE && queue->lastIntervalLossPercentage >= CONN_CONSECUTIVE_POOR_LOSS_RATE))) {
                 // We require 2 consecutive intervals above CONN_CONSECUTIVE_POOR_LOSS_RATE or a single
                 // interval above CONN_IMMEDIATE_POOR_LOSS_RATE to notify of a poor connection.
                 ListenerCallbacks.connectionStatusUpdate(CONN_STATUS_POOR);
-                lastConnectionStatusUpdate = CONN_STATUS_POOR;
+                queue->lastConnectionStatusUpdate = CONN_STATUS_POOR;
             }
-            else if (frameLossPercent <= CONN_OKAY_LOSS_RATE && lastConnectionStatusUpdate != CONN_STATUS_OKAY) {
+            else if (frameLossPercent <= CONN_OKAY_LOSS_RATE && queue->lastConnectionStatusUpdate != CONN_STATUS_OKAY) {
                 ListenerCallbacks.connectionStatusUpdate(CONN_STATUS_OKAY);
-                lastConnectionStatusUpdate = CONN_STATUS_OKAY;
+                queue->lastConnectionStatusUpdate = CONN_STATUS_OKAY;
             }
 
-            lastIntervalLossPercentage = frameLossPercent;
+            queue->lastIntervalLossPercentage = frameLossPercent;
         }
 
         // Reset interval
-        intervalStartTimeMs = now;
-        intervalGoodFrameCount = intervalTotalFrameCount = 0;
+        queue->intervalStartTimeMs = now;
+        queue->intervalGoodFrameCount = queue->intervalTotalFrameCount = 0;
     }
 
-    intervalTotalFrameCount += frameIndex - lastSeenFrame;
-    lastSeenFrame = frameIndex;
+    queue->intervalTotalFrameCount += frameIndex - queue->lastSeenFrame;
+    queue->lastSeenFrame = frameIndex;
 }
 
 // Reads an NV control stream packet from the TCP connection
@@ -1162,10 +1138,8 @@ static void controlReceiveThreadFunc(void* context) {
             }
             else if (ctlHdr->type == packetTypes[IDX_TERMINATION]) {
                 BYTE_BUFFER bb;
-
-
                 uint32_t terminationErrorCode;
-
+                uint32_t lastSeenFrame=getLastSeenFrame(0);//todo:这里需要看看 怎么传递 trackIndex进来，目前还没跟踪到代码执行点
                 if (packetLength >= 6) {
                     // This is the extended termination message which contains a full HRESULT
                     BbInitializeWrappedBuffer(&bb, (char*)ctlHdr, sizeof(*ctlHdr), packetLength - sizeof(*ctlHdr), BYTE_ORDER_BIG);
@@ -1319,30 +1293,31 @@ static void lossStatsThreadFunc(void* context) {
             return;
         }
 
-        while (!PltIsThreadInterrupted(&lossStatsThread)) {
-            // Construct the payload
-            BbInitializeWrappedBuffer(&byteBuffer, lossStatsPayload, 0, payloadLengths[IDX_LOSS_STATS], BYTE_ORDER_LITTLE);
-            BbPut32(&byteBuffer, 0);
-            BbPut32(&byteBuffer, LOSS_REPORT_INTERVAL_MS);
-            BbPut32(&byteBuffer, 1000);
-            BbPut64(&byteBuffer, lastGoodFrame);
-            BbPut32(&byteBuffer, 0);
-            BbPut32(&byteBuffer, 0);
-            BbPut32(&byteBuffer, 0x14);
+        while (!PltIsThreadInterrupted(&lossStatsThread)) { //丢帧率的包是32个字节
+            for(int i=0;i<trackCount;i++){
+              // Construct the payload
+              BbInitializeWrappedBuffer(&byteBuffer, lossStatsPayload, 0, payloadLengths[IDX_LOSS_STATS], BYTE_ORDER_LITTLE);
+              BbPut32(&byteBuffer, 0); //数量
+              BbPut32(&byteBuffer, LOSS_REPORT_INTERVAL_MS);//时间
+              BbPut32(&byteBuffer, 1000);
+              BbPut64(&byteBuffer, getLastGoodFrame(i));//最后的好帧
+              BbPut32(&byteBuffer, 0);
+              BbPut32(&byteBuffer, i);//暂定这个是第几个display的索引
+              BbPut32(&byteBuffer, 0x14);
 
-            // Send the message (and don't expect a response)
-            if (!sendMessageAndForget(packetTypes[IDX_LOSS_STATS],
-                                      payloadLengths[IDX_LOSS_STATS],
-                                      lossStatsPayload,
-                                      CTRL_CHANNEL_GENERIC,
-                                      0,
-                                      false)) {
-                free(lossStatsPayload);
-                Limelog("Loss Stats: Transaction failed: %d\n", (int)LastSocketError());
-                ListenerCallbacks.connectionTerminated(LastSocketFail());
-                return;
+              // Send the message (and don't expect a response)
+              if (!sendMessageAndForget(packetTypes[IDX_LOSS_STATS],
+                                        payloadLengths[IDX_LOSS_STATS],
+                                        lossStatsPayload,
+                                        CTRL_CHANNEL_GENERIC,
+                                        0,
+                                        false)) {
+                  free(lossStatsPayload);
+                  Limelog("Loss Stats: Transaction failed: %d\n", (int)LastSocketError());
+                  ListenerCallbacks.connectionTerminated(LastSocketFail());
+                  return;
+              }
             }
-
             // Wait a bit
             PltSleepMsInterruptible(&lossStatsThread, LOSS_REPORT_INTERVAL_MS);
         }
@@ -1357,7 +1332,7 @@ static void requestIdrFrame(int trackIndex) {//todo:目前这个送得太频繁�
     // reference frame invalidation request.
     if (!supportsIdrFrameRequest) {
         int64_t payload[3];
-
+        uint32_t lastSeenFrame = getLastSeenFrame(trackIndex);
         // Form the payload
         if (lastSeenFrame < 0x20) {
             payload[0] = 0;
