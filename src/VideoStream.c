@@ -83,11 +83,19 @@ static void VideoPingThreadProc(void* context) {
         if (VideoPingPayload.payload[0] != 0) {
             pingCount++;
             VideoPingPayload.sequenceNumber = BE32(pingCount);
-
-            sendto(rtpSocket, (char*)&VideoPingPayload, sizeof(VideoPingPayload), 0, (struct sockaddr*)&saddr, AddrLen);
+            if(proxySendCallback!=NULL){
+                proxySendCallback((char *) &VideoPingPayload,sizeof(VideoPingPayload),SocketChannelVideo,-1);
+            }else {
+                sendto(rtpSocket, (char*)&VideoPingPayload, sizeof(VideoPingPayload), 0, (struct sockaddr*)&saddr, AddrLen);
+            }
         }
         else {
-            sendto(rtpSocket, legacyPingData, sizeof(legacyPingData), 0, (struct sockaddr*)&saddr, AddrLen);
+            if(proxySendCallback!=NULL){
+                proxySendCallback(legacyPingData, sizeof(legacyPingData),SocketChannelAudio,-1);
+            }else {
+                sendto(rtpSocket, legacyPingData, sizeof(legacyPingData), 0, (struct sockaddr*)&saddr, AddrLen);
+            }
+
         }
 
         PltSleepMsInterruptible(&udpPingThread, 500);
@@ -147,10 +155,12 @@ static void VideoReceiveThreadProc(void* context) {
             }
         }
 
-        err = recvUdpSocket(rtpSocket,
-                            encrypted ? encryptedBuffer : buffer,
-                            receiveSize,
-                            useSelect);
+        if(proxyReceiveCallback!=NULL){
+            proxyReceiveCallback(encrypted ? encryptedBuffer : buffer,receiveSize,SocketChannelAudio,-1);
+        }else {
+            err = recvUdpSocket(rtpSocket,encrypted ? encryptedBuffer : buffer,receiveSize,useSelect);
+        }
+
         if (err < 0) {
             Limelog("Video Receive: recvUdpSocket() failed: %d\n", (int)LastSocketError());
             ListenerCallbacks.connectionTerminated(LastSocketFail());

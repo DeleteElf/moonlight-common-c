@@ -53,11 +53,18 @@ static void AudioPingThreadProc(void* context) {
         if (AudioPingPayload.payload[0] != 0) {
             pingCount++;
             AudioPingPayload.sequenceNumber = BE32(pingCount);
-
-            sendto(rtpSocket, (char*)&AudioPingPayload, sizeof(AudioPingPayload), 0, (struct sockaddr*)&saddr, AddrLen);
+            if(proxySendCallback!=NULL){
+                proxySendCallback((char*) &AudioPingPayload,sizeof(AudioPingPayload),SocketChannelAudio,-1);
+            }else {
+                sendto(rtpSocket,(char*)&AudioPingPayload,sizeof(AudioPingPayload), 0, (struct sockaddr*) &saddr, AddrLen);
+            }
         }
         else {
-            sendto(rtpSocket, legacyPingData, sizeof(legacyPingData), 0, (struct sockaddr*)&saddr, AddrLen);
+            if(proxySendCallback!=NULL){
+                proxySendCallback(legacyPingData, sizeof(legacyPingData),SocketChannelAudio,-1);
+            }else {
+                sendto(rtpSocket, legacyPingData, sizeof(legacyPingData), 0, (struct sockaddr *) &saddr, AddrLen);
+            }
         }
 
         PltSleepMsInterruptible(&udpPingThread, 500);
@@ -266,8 +273,11 @@ static void AudioReceiveThreadProc(void* context) {
                 break;
             }
         }
-
-        packet->header.size = recvUdpSocket(rtpSocket, &packet->data[0], MAX_PACKET_SIZE, useSelect);
+        if(proxyReceiveCallback!=NULL){
+            packet->header.size= proxyReceiveCallback(&packet->data[0],MAX_PACKET_SIZE,SocketChannelAudio,-1);
+        }else {
+            packet->header.size = recvUdpSocket(rtpSocket, &packet->data[0], MAX_PACKET_SIZE, useSelect);
+        }
         if (packet->header.size < 0) {
             Limelog("Audio Receive: recvUdpSocket() failed: %d\n", (int)LastSocketError());
             ListenerCallbacks.connectionTerminated(LastSocketFail());
@@ -493,6 +503,12 @@ int LiSendAudioStreamEvent(const char* data, unsigned int length,unsigned  int p
     char* buffer=(char*)malloc(size+length);
     memcpy(buffer,&packet,size);
     memcpy(buffer+size,data,length);
+
+    if(proxySendCallback!=NULL){
+        proxySendCallback(buffer,size+length,SocketChannelAudio,-1);
+        return 0;
+    }
+
     sendto(rtpSocket, buffer, size+length, 0, (struct sockaddr*)&saddr, AddrLen);
     return 0;
 }

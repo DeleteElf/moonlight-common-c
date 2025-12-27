@@ -713,10 +713,19 @@ static bool sendMessageTcp(short ptype, short paylen, const void* payload) {
 }
 
 static bool sendMessageAndForget(short ptype, short paylen, const void* payload, uint8_t channelId, uint32_t flags, bool moreData) {
-    return sendMessageEnet(ptype, paylen, payload, channelId, flags, moreData);
+  if(proxySendCallback!=NULL){
+      proxySendCallback(payload,paylen,SocketChannelControl,ptype);
+      return true ;
+  }else{
+      return sendMessageEnet(ptype, paylen, payload, channelId, flags, moreData);
+  }
 }
 
 static bool sendMessageAndDiscardReply(short ptype, short paylen, const void* payload, uint8_t channelId, uint32_t flags, bool moreData) {
+    if(proxySendCallback!=NULL){
+        proxySendCallback(payload,paylen,SocketChannelControl,ptype);
+        return true ;
+    }
     if (!sendMessageEnet(ptype, paylen, payload, channelId, flags, moreData)) {
         return false;
     }
@@ -1454,6 +1463,11 @@ static void requestIdrFrameFunc(void* context) {
 // Stops the control stream
 int stopControlStream(void) {
     stopping = true;
+    if(proxyChannelStopCallback!=NULL){
+        proxyChannelStopCallback(SocketChannelControl);
+        return 0;
+    }
+
     LbqSignalQueueShutdown(&invalidReferenceFrameTuples);
     LbqSignalQueueShutdown(&frameFecStatusQueue);
     LbqSignalQueueDrain(&asyncCallbackQueue);
@@ -1556,6 +1570,11 @@ bool LiGetEstimatedRttInfo(uint32_t* estimatedRtt, uint32_t* estimatedRttVarianc
 
 // Starts the control stream
 int startControlStream(void) {
+    if(proxyChannelStartCallback!=NULL){
+        proxyChannelStartCallback(SocketChannelControl);
+        return 0;
+    }
+
     int err;
 
     ENetAddress remoteAddress, localAddress;

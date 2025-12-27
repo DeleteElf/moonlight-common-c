@@ -37,6 +37,26 @@ uint32_t EncryptionFeaturesSupported;
 uint32_t EncryptionFeaturesRequested;
 uint32_t EncryptionFeaturesEnabled;
 
+ProxyCallback proxySendCallback;
+ProxyCallback proxyReceiveCallback;
+ProxyChannelCallback proxyChannelStopCallback;
+ProxyChannelCallback proxyChannelStartCallback;
+void LiSetProxySend(ProxyCallback callback){
+    proxySendCallback=callback;
+}
+
+void LiSetProxyReceive(ProxyCallback callback){
+    proxyReceiveCallback=callback;
+}
+
+void LiSetProxyChannelStop(ProxyChannelCallback callback){
+    proxyChannelStopCallback=callback;
+}
+
+void LiSetProxyChannelStart(ProxyChannelCallback callback){
+    proxyChannelStartCallback=callback;
+}
+
 // Connection stages
 static const char* stageNames[STAGE_MAX] = {
     "none",
