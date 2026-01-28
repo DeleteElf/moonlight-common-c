@@ -728,7 +728,7 @@ static void processAvcHevcRtpPayloadSlow(PVIDEO_DEPACKETIZER depacketizer,PBUFFE
         // To minimize copies, we'll allocate for SPS, PPS, and VPS to allow
         // us to reuse the packet buffer for the picture data in the I-frame.
         queueFragment(depacketizer,containsPicData ? existingEntry : NULL,
-                      currentPos->data, start, currentPos->offset - start);
+                      currentPos->data, start, currentPos->offset - start,ssrc);
     }
 }
 
