@@ -280,11 +280,9 @@ static void VideoDecoderThreadProc(void* context) {
     while (!PltIsThreadInterrupted(&decoderThread)) {
         VIDEO_FRAME_HANDLE frameHandle;
         PDECODE_UNIT decodeUnit;
-        //todo:暂时写死ssrc是0，稍后需要修改成实际的displayIndex
         if (!LiWaitForNextVideoFrame(&frameHandle, &decodeUnit,trackIndex)) {
             return;
         }
-
         LiCompleteVideoFrame(frameHandle, VideoCallbacks.submitDecodeUnit(decodeUnit),trackIndex);
     }
 }

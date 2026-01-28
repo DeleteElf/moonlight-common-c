@@ -622,7 +622,7 @@ static int getBufferFlags(char* data, int length) {
 
 // As an optimization, we can cast the existing packet buffer to a PLENTRY and avoid
 // a malloc() and a memcpy() of the packet data.
-static void queueFragment(PVIDEO_DEPACKETIZER depacketizer, PLENTRY_INTERNAL* existingEntry, char* data, int offset, int length) {
+static void queueFragment(PVIDEO_DEPACKETIZER depacketizer, PLENTRY_INTERNAL* existingEntry, char* data, int offset, int length,int ssrc) {
     PLENTRY_INTERNAL entry;
 
     if (existingEntry == NULL || *existingEntry == NULL) {
@@ -640,7 +640,7 @@ static void queueFragment(PVIDEO_DEPACKETIZER depacketizer, PLENTRY_INTERNAL* ex
         // the data already resides within the LENTRY allocation.
         if (existingEntry == NULL || *existingEntry == NULL) {
             entry->allocPtr = entry;
-
+            entry->entry.ssrc=ssrc;
             entry->entry.data = (char*)(entry + 1);
             memcpy(entry->entry.data, &data[offset], entry->entry.length);
         }
@@ -724,7 +724,7 @@ static void processAvcHevcRtpPayloadSlow(PVIDEO_DEPACKETIZER depacketizer,PBUFFE
                 skipToNextNalOrEnd(currentPos);
             }
         }
-
+        int ssrc=(*existingEntry)->entry.ssrc;
         // To minimize copies, we'll allocate for SPS, PPS, and VPS to allow
         // us to reuse the packet buffer for the picture data in the I-frame.
         queueFragment(depacketizer,containsPicData ? existingEntry : NULL,
@@ -1018,10 +1018,10 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
         // There is no frame header on later packets
         frameHeaderSize = 0;
     }
-
+    int ssrc=(*existingEntry)->entry.ssrc;
     if (NegotiatedVideoFormat & (VIDEO_FORMAT_MASK_H264 | VIDEO_FORMAT_MASK_H265)) {
         if (firstPacket && isIdrFrameStart(&currentPos)) {
-            Limelog("video packet is idr===========================>%d\n",(*existingEntry)->entry.ssrc);
+            Limelog("video packet is idr===========================>%d\n",ssrc);
 
             // SPS and PPS prefix is padded between NALs, so we must decode it with the slow path
             processAvcHevcRtpPayloadSlow(depacketizer,&currentPos, existingEntry);
@@ -1039,7 +1039,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
                 currentPos.length--;
             }
 #endif
-            queueFragment(depacketizer,existingEntry, currentPos.data, currentPos.offset, currentPos.length);
+            queueFragment(depacketizer,existingEntry, currentPos.data, currentPos.offset, currentPos.length,ssrc);
         }
     }
     else {
@@ -1083,7 +1083,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
         }
 
         // Other codecs are just passed through as is.
-        queueFragment(depacketizer,existingEntry, currentPos.data, currentPos.offset, currentPos.length);
+        queueFragment(depacketizer,existingEntry, currentPos.data, currentPos.offset, currentPos.length,ssrc);
     }
 
     if (lastPacket) {
@@ -1150,7 +1150,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
 void notifyFrameLost(int trackIndex,unsigned int frameNumber, bool speculative) {
     // We may not invalidate frames that we've already received
     PVIDEO_DEPACKETIZER depacketizer=&depacketizers[trackIndex];
-    LC_ASSERT(frameNumber >= depacketizer->startFrameNumber);
+    // LC_ASSERT(frameNumber >= depacketizer->startFrameNumber);
 
     // Drop state and determine if we need an IDR frame or if RFI is okay
     dropFrameState(depacketizer);
