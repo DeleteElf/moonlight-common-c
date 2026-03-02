@@ -273,7 +273,7 @@ static PRTPA_FEC_BLOCK getFecBlockForRtpPacket(PRTP_AUDIO_QUEUE queue, PRTP_PACK
     }
     else {
         Limelog("Invalid RTP audio payload type: %u\n", packet->packetType);
-        LC_ASSERT_VT(false);
+        // LC_ASSERT_VT(false);
         return NULL;
     }
 

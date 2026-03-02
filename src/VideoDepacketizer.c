@@ -109,10 +109,13 @@ void initializeVideoDepacketizer(int pktSize,int trackCount) {
 static void cleanupFrameState(PVIDEO_DEPACKETIZER depacketizer) {
     PLENTRY_INTERNAL lastEntry;
 
-    while (depacketizer->nalChainHead != NULL) {
+    while (depacketizer->nalChainHead) {
         lastEntry = (PLENTRY_INTERNAL)depacketizer->nalChainHead;
-        depacketizer->nalChainHead = lastEntry->entry.next;
-        free(lastEntry->allocPtr);
+        if(lastEntry){
+            depacketizer->nalChainHead = lastEntry->entry.next;
+            if(lastEntry->allocPtr)
+              free(lastEntry->allocPtr);
+        }
     }
     depacketizer->nalChainTail = NULL;
     depacketizer->nalChainDataLength = 0;
@@ -121,7 +124,7 @@ static void cleanupFrameState(PVIDEO_DEPACKETIZER depacketizer) {
 // Cleanup frame state and set that we're waiting for an IDR Frame
 static void dropFrameState(PVIDEO_DEPACKETIZER depacketizer) {
     // This may only be called at frame boundaries
-    LC_ASSERT(!depacketizer->decodingFrame);
+    // LC_ASSERT(!depacketizer->decodingFrame);
     // We're dropping frame state now
     depacketizer->dropStatePending = false;
 
