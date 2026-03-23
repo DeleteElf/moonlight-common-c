@@ -1176,8 +1176,8 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
         LC_ASSERT(AudioPortNumber == 0);
         if (!parseServerPortFromTransport(&response, &AudioPortNumber)) {
             // Use the well known port if parsing fails
-            AudioPortNumber = 48000;
-
+//            AudioPortNumber = 48000;
+            AudioPortNumber = 48001;
             Limelog("Audio port: %u (RTSP parsing failed)\n", AudioPortNumber);
         }
         else {
@@ -1252,8 +1252,8 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
         LC_ASSERT(VideoPortNumber == 0);
         if (!parseServerPortFromTransport(&response, &VideoPortNumber)) {
             // Use the well known port if parsing fails
-            VideoPortNumber = 47998;
-
+            VideoPortNumber = 48002;
+//            VideoPortNumber = 47998;
             Limelog("Video port: %u (RTSP parsing failed)\n", VideoPortNumber);
         }
         else {
@@ -1296,8 +1296,8 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
         LC_ASSERT(ControlPortNumber == 0);
         if (!parseServerPortFromTransport(&response, &ControlPortNumber)) {
             // Use the well known port if parsing fails
-            ControlPortNumber = 47999;
-
+            ControlPortNumber = 48000;
+//            ControlPortNumber = 47999;
             Limelog("Control port: %u (RTSP parsing failed)\n", ControlPortNumber);
         }
         else {
