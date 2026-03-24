@@ -270,17 +270,17 @@ static bool sendInputPacket(PPACKET_HOLDER holder, bool moreData) {
         encryptedLengthPrefix = BE32(encryptedSize);
         memcpy(&encryptedBuffer[0], &encryptedLengthPrefix, sizeof(encryptedLengthPrefix));
 
-        if (AppVersionQuad[0] < 5) {
-            // Send the encrypted payload
-            err = send(inputSock, (const char*) encryptedBuffer,
-                (int) (encryptedSize + sizeof(encryptedLengthPrefix)), 0);
-            if (err <= 0) {
-                Limelog("Input: send() failed: %d\n", (int) LastSocketError());
-                ListenerCallbacks.connectionTerminated(LastSocketFail());
-                return false;
-            }
-        }
-        else {
+//        if (AppVersionQuad[0] < 5) {
+//            // Send the encrypted payload
+//            err = send(inputSock, (const char*) encryptedBuffer,
+//                (int) (encryptedSize + sizeof(encryptedLengthPrefix)), 0);
+//            if (err <= 0) {
+//                Limelog("Input: send() failed: %d\n", (int) LastSocketError());
+//                ListenerCallbacks.connectionTerminated(LastSocketFail());
+//                return false;
+//            }
+//        }
+//        else {
             // For reasons that I can't understand, NVIDIA decides to use the last 16
             // bytes of ciphertext in the most recent game controller packet as the IV for
             // future encryption. I think it may be a buffer overrun on their end but we'll have
@@ -301,7 +301,7 @@ static bool sendInputPacket(PPACKET_HOLDER holder, bool moreData) {
                 ListenerCallbacks.connectionTerminated(err);
                 return false;
             }
-        }
+//        }
     }
 
     return true;

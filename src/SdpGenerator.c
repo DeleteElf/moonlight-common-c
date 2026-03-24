@@ -405,15 +405,15 @@ static PSDP_OPTION getAttributesList(char*urlSafeAddr) {
         err |= addAttributeString(&optionHead, "x-nv-aqos.qosTrafficType", "0");
     }
 
-    if (AppVersionQuad[0] == 3) {
-        err |= addGen3Options(&optionHead, urlSafeAddr);
-    }
-    else if (AppVersionQuad[0] == 4) {
-        err |= addGen4Options(&optionHead, urlSafeAddr);
-    }
-    else {
+//    if (AppVersionQuad[0] == 3) {
+//        err |= addGen3Options(&optionHead, urlSafeAddr);
+//    }
+//    else if (AppVersionQuad[0] == 4) {
+//        err |= addGen4Options(&optionHead, urlSafeAddr);
+//    }
+//    else {
         err |= addGen5Options(&optionHead);
-    }
+//    }
 
     audioChannelCount = CHANNEL_COUNT_FROM_AUDIO_CONFIGURATION(StreamConfig.audioConfiguration);
     audioChannelMask = CHANNEL_MASK_FROM_AUDIO_CONFIGURATION(StreamConfig.audioConfiguration);
@@ -554,16 +554,20 @@ static int fillSdpHeader(char* buffer, size_t length, int rtspClientVersion, cha
 }
 
 // Populate the SDP tail with required information
-static int fillSdpTail(char* buffer, size_t length) {
-    LC_ASSERT(VideoPortNumber != 0);
-    return snprintf(buffer, length,
-        "t=0 0\r\n"
-        "m=video %d  \r\n",
-        AppVersionQuad[0] < 4 ? 47996 : VideoPortNumber);
+static int fillSdpTail(char* buffer, size_t length,int displayCount) {
+    LC_ASSERT(Video1PortNumber != 0);
+//    if(displayCount==1) {
+        return snprintf(buffer, length, "t=0 0\r\n"
+                                        "m=video %d  \r\n",Video1PortNumber);
+//    }else{//todo:暂时不支持多个RTSP
+//        LC_ASSERT(Video2PortNumber != 0);
+//        return snprintf(buffer, length, "t=0 0\r\n"
+//                                        "m=video %d %d \r\n",Video1PortNumber,Video2PortNumber);
+//    }
 }
 
 // Get the SDP attributes for the stream config
-char* getSdpPayloadForStreamConfig(int rtspClientVersion, int* length) {
+char* getSdpPayloadForStreamConfig(int rtspClientVersion, int* length,int displayCount) {
     PSDP_OPTION attributeList;
     int attributeListSize;
     int offset, written;
@@ -605,7 +609,7 @@ char* getSdpPayloadForStreamConfig(int rtspClientVersion, int* length) {
     else {
         offset += written;
     }
-    written = fillSdpTail(&payload[offset], MAX_SDP_TAIL_LEN);
+    written = fillSdpTail(&payload[offset], MAX_SDP_TAIL_LEN,displayCount);
     if (written < 0 || written >= MAX_SDP_TAIL_LEN) {
         LC_ASSERT(false);
         free(payload);

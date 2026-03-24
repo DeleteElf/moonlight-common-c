@@ -68,6 +68,8 @@ void destroyVideoStream() {
 static void VideoPingThreadProc(void* context) {
     char legacyPingData[] = { 0x50, 0x49, 0x4E, 0x47 };
     LC_SOCKADDR saddr;
+    int displayIndex=*(int*)context;
+    uint16_t VideoPortNumber=displayIndex==0?Video1PortNumber:Video2PortNumber;
 
     LC_ASSERT(VideoPortNumber != 0);
 
@@ -338,7 +340,7 @@ void stopVideoStream(void) {
 }
 
 // Start the video stream
-int startVideoStream(void* rendererContext, int drFlags) {
+int startVideoStream(void* rendererContext, int drFlags,int displayIndex) {
     int err;
 
     firstFrameSocket = INVALID_SOCKET;
@@ -382,30 +384,30 @@ int startVideoStream(void* rendererContext, int drFlags) {
         }
     }
 
-    if (AppVersionQuad[0] == 3) {
-        // Connect this socket to open port 47998 for our ping thread
-        firstFrameSocket = connectTcpSocket(&RemoteAddr, AddrLen,
-                                            FIRST_FRAME_PORT, FIRST_FRAME_TIMEOUT_SEC);
-        if (firstFrameSocket == INVALID_SOCKET) {
-            VideoCallbacks.stop();
-            stopVideoDepacketizer();
-            PltInterruptThread(&receiveThread);
-            if ((VideoCallbacks.capabilities & (CAPABILITY_DIRECT_SUBMIT | CAPABILITY_PULL_RENDERER)) == 0) {
-                PltInterruptThread(&decoderThread);
-            }
-            PltJoinThread(&receiveThread);
-            if ((VideoCallbacks.capabilities & (CAPABILITY_DIRECT_SUBMIT | CAPABILITY_PULL_RENDERER)) == 0) {
-                PltJoinThread(&decoderThread);
-            }
-            closeSocket(rtpSocket);
-            VideoCallbacks.cleanup();
-            return LastSocketError();
-        }
-    }
+//    if (AppVersionQuad[0] == 3) {
+//        // Connect this socket to open port 47998 for our ping thread
+//        firstFrameSocket = connectTcpSocket(&RemoteAddr, AddrLen,
+//                                            FIRST_FRAME_PORT, FIRST_FRAME_TIMEOUT_SEC);
+//        if (firstFrameSocket == INVALID_SOCKET) {
+//            VideoCallbacks.stop();
+//            stopVideoDepacketizer();
+//            PltInterruptThread(&receiveThread);
+//            if ((VideoCallbacks.capabilities & (CAPABILITY_DIRECT_SUBMIT | CAPABILITY_PULL_RENDERER)) == 0) {
+//                PltInterruptThread(&decoderThread);
+//            }
+//            PltJoinThread(&receiveThread);
+//            if ((VideoCallbacks.capabilities & (CAPABILITY_DIRECT_SUBMIT | CAPABILITY_PULL_RENDERER)) == 0) {
+//                PltJoinThread(&decoderThread);
+//            }
+//            closeSocket(rtpSocket);
+//            VideoCallbacks.cleanup();
+//            return LastSocketError();
+//        }
+//    }
 
     // Start pinging before reading the first frame so GFE knows where
     // to send UDP data
-    err = PltCreateThread("VideoPing", VideoPingThreadProc, NULL, &udpPingThread);
+    err = PltCreateThread("VideoPing", VideoPingThreadProc, &displayIndex, &udpPingThread);
     if (err != 0) {
         VideoCallbacks.stop();
         stopVideoDepacketizer();
@@ -426,14 +428,14 @@ int startVideoStream(void* rendererContext, int drFlags) {
         return err;
     }
 
-    if (AppVersionQuad[0] == 3) {
-        // Read the first frame to start the flow of video
-        err = readFirstFrame();
-        if (err != 0) {
-            stopVideoStream();
-            return err;
-        }
-    }
+//    if (AppVersionQuad[0] == 3) {
+//        // Read the first frame to start the flow of video
+//        err = readFirstFrame();
+//        if (err != 0) {
+//            stopVideoStream();
+//            return err;
+//        }
+//    }
 
     return 0;
 }

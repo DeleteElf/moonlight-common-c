@@ -36,7 +36,8 @@ extern bool ReferenceFrameInvalidationSupported;
 extern uint16_t RtspPortNumber;
 extern uint16_t ControlPortNumber;
 extern uint16_t AudioPortNumber;
-extern uint16_t VideoPortNumber;
+extern uint16_t Video1PortNumber;
+extern uint16_t Video2PortNumber;
 
 extern SS_PING AudioPingPayload;
 extern SS_PING VideoPingPayload;
@@ -112,7 +113,7 @@ void fixupMissingCallbacks(PDECODER_RENDERER_CALLBACKS* drCallbacks, PAUDIO_REND
     PCONNECTION_LISTENER_CALLBACKS* clCallbacks);
 void setRecorderCallbacks(PDECODER_RENDERER_CALLBACKS drCallbacks, PAUDIO_RENDERER_CALLBACKS arCallbacks);
 
-char* getSdpPayloadForStreamConfig(int rtspClientVersion, int* length);
+char* getSdpPayloadForStreamConfig(int rtspClientVersion, int* length,int displayCount);
 
 int initializeControlStream(int videoTrackCount);
 int startControlStream(void);
@@ -141,7 +142,7 @@ void notifyFrameLost(int trackIndex,unsigned int frameNumber, bool speculative);
 void initializeVideoStream(int displayCount);
 void destroyVideoStream(void);
 void notifyKeyFrameReceived(void);
-int startVideoStream(void* rendererContext, int drFlags);
+int startVideoStream(void* rendererContext, int drFlags,int displayIndex);
 void stopVideoStream(void);
 
 int initializeAudioStream(void);

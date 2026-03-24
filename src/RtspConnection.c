@@ -622,7 +622,7 @@ static bool playStream(PRTSP_MESSAGE response, char* target, int* error) {
 }
 
 // Send RTSP ANNOUNCE message
-static bool sendVideoAnnounce(PRTSP_MESSAGE response, int* error) {
+static bool sendVideoAnnounce(PRTSP_MESSAGE response, int* error,int displayCount) {
     RTSP_MESSAGE request;
     bool ret;
     int payloadLength;
@@ -640,7 +640,7 @@ static bool sendVideoAnnounce(PRTSP_MESSAGE response, int* error) {
             goto FreeMessage;
         }
 
-        request.payload = getSdpPayloadForStreamConfig(rtspClientVersion, &payloadLength);
+        request.payload = getSdpPayloadForStreamConfig(rtspClientVersion, &payloadLength,displayCount);
         if (request.payload == NULL) {
             goto FreeMessage;
         }
@@ -1157,9 +1157,7 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
         int error = -1;
         char* strtokCtx = NULL;
 
-        if (!setupStream(&response,
-                         AppVersionQuad[0] >= 5 ? "streamid=audio/0/0" : "streamid=audio",
-                         &error)) {
+        if (!setupStream(&response,AppVersionQuad[0] >= 5 ? "streamid=audio/0/0" : "streamid=audio",&error)) {
             Limelog("RTSP SETUP streamid=audio request failed: %d\n", error);
             ret = error;
             goto Exit;
@@ -1226,9 +1224,7 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
         int error = -1;
         char* pingPayload;
 
-        if (!setupStream(&response,
-                         AppVersionQuad[0] >= 5 ? "streamid=video/0/0" : "streamid=video",
-                         &error)) {
+        if (!setupStream(&response,AppVersionQuad[0] >= 5 ? "streamid=video/0/0" : "streamid=video", &error)) {
             Limelog("RTSP SETUP streamid=video request failed: %d\n", error);
             ret = error;
             goto Exit;
@@ -1249,15 +1245,54 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
         }
 
         // Parse the video port out of the RTSP SETUP response
-        LC_ASSERT(VideoPortNumber == 0);
-        if (!parseServerPortFromTransport(&response, &VideoPortNumber)) {
+        LC_ASSERT(Video1PortNumber == 0);
+        if (!parseServerPortFromTransport(&response, &Video1PortNumber)) {
             // Use the well known port if parsing fails
-            VideoPortNumber = 48002;
+            Video1PortNumber = 48002;
 //            VideoPortNumber = 47998;
-            Limelog("Video port: %u (RTSP parsing failed)\n", VideoPortNumber);
+            Limelog("Video port: %u (RTSP parsing failed)\n", Video1PortNumber);
         }
         else {
-            Limelog("Video port: %u\n", VideoPortNumber);
+            Limelog("Video port: %u\n", Video1PortNumber);
+        }
+
+        freeMessage(&response);
+    }
+
+    if(StreamConfig.displayCount==2&&false) {
+        RTSP_MESSAGE response;
+        int error = -1;
+        char *pingPayload;
+
+        if (!setupStream(&response, AppVersionQuad[0] >= 5 ? "streamid=video/1/0" : "streamid=video", &error)) {
+            Limelog("RTSP SETUP streamid=video request failed: %d\n", error);
+            ret = error;
+            goto Exit;
+        }
+
+        if (response.message.response.statusCode != 200) {
+            Limelog("RTSP SETUP streamid=video request failed: %d\n",
+                    response.message.response.statusCode);
+            ret = response.message.response.statusCode;
+            goto Exit;
+        }
+
+        // Parse the Sunshine ping payload protocol extension if present
+        memset(&VideoPingPayload, 0, sizeof(VideoPingPayload));
+        pingPayload = getOptionContent(response.options, "X-SS-Ping-Payload");
+        if (pingPayload != NULL && strlen(pingPayload) == sizeof(VideoPingPayload.payload)) {
+            memcpy(VideoPingPayload.payload, pingPayload, sizeof(VideoPingPayload.payload));
+        }
+
+        // Parse the video port out of the RTSP SETUP response
+        LC_ASSERT(Video2PortNumber == 0);
+        if (!parseServerPortFromTransport(&response, &Video2PortNumber)) {
+            // Use the well known port if parsing fails
+            Video2PortNumber = 48003;
+//            VideoPortNumber = 47998;
+            Limelog("Video port: %u (RTSP parsing failed)\n", Video2PortNumber);
+        } else {
+            Limelog("Video port: %u\n", Video2PortNumber);
         }
 
         freeMessage(&response);
@@ -1311,7 +1346,7 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
         RTSP_MESSAGE response;
         int error = -1;
 
-        if (!sendVideoAnnounce(&response, &error)) {
+        if (!sendVideoAnnounce(&response, &error,StreamConfig.displayCount)) {
             Limelog("RTSP ANNOUNCE request failed: %d\n", error);
             ret = error;
             goto Exit;
