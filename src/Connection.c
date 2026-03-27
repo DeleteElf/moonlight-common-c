@@ -503,13 +503,20 @@ int LiStartConnection(PSERVER_INFORMATION serverInfo, PSTREAM_CONFIGURATION stre
 
     Limelog("Starting video stream...");
     ListenerCallbacks.stageStarting(STAGE_VIDEO_STREAM_START);
-    for(int i=0;i<streamConfig->displayCount&&i<1;i++) { //todo:暂时不支持多个RTSP
-        err = startVideoStream(renderContext, drFlags,i);
-        if (err != 0) {
-            Limelog("Video stream start failed: %d\n", err);
-            ListenerCallbacks.stageFailed(STAGE_VIDEO_STREAM_START, err);
-            goto Cleanup;
-        }
+//    for(int i=0;i<streamConfig->displayCount&&i<1;i++) { //todo:暂时不支持多个RTSP
+//        err = startVideoStream(renderContext, drFlags,i);
+//        if (err != 0) {
+//            Limelog("Video stream start failed: %d\n", err);
+//            ListenerCallbacks.stageFailed(STAGE_VIDEO_STREAM_START, err);
+//            goto Cleanup;
+//        }
+//    }
+
+    err = startVideoStream(renderContext, drFlags);
+    if (err != 0) {
+        Limelog("Video stream start failed: %d\n", err);
+        ListenerCallbacks.stageFailed(STAGE_VIDEO_STREAM_START, err);
+        goto Cleanup;
     }
     stage++;
     LC_ASSERT(stage == STAGE_VIDEO_STREAM_START);

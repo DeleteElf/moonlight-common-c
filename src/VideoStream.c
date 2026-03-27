@@ -68,9 +68,11 @@ void destroyVideoStream() {
 static void VideoPingThreadProc(void* context) {
     char legacyPingData[] = { 0x50, 0x49, 0x4E, 0x47 };
     LC_SOCKADDR saddr;
-    int displayIndex=*(int*)context;
-    uint16_t VideoPortNumber=displayIndex==0?Video1PortNumber:Video2PortNumber;
 
+    // auto threadContext=(thread_context*)context;
+    // int displayIndex=*dIndex;
+    // uint16_t VideoPortNumber=displayIndex==0?Video1PortNumber:Video2PortNumber;
+    uint16_t VideoPortNumber=Video1PortNumber;
     LC_ASSERT(VideoPortNumber != 0);
 
     memcpy(&saddr, &RemoteAddr, sizeof(saddr));
@@ -340,7 +342,7 @@ void stopVideoStream(void) {
 }
 
 // Start the video stream
-int startVideoStream(void* rendererContext, int drFlags,int displayIndex) {
+int startVideoStream(void* rendererContext, int drFlags) {
     int err;
 
     firstFrameSocket = INVALID_SOCKET;
@@ -407,7 +409,8 @@ int startVideoStream(void* rendererContext, int drFlags,int displayIndex) {
 
     // Start pinging before reading the first frame so GFE knows where
     // to send UDP data
-    err = PltCreateThread("VideoPing", VideoPingThreadProc, &displayIndex, &udpPingThread);
+    // void* displayIndex_ptr=&displayIndex;
+    err = PltCreateThread("VideoPing", VideoPingThreadProc, NULL, &udpPingThread);
     if (err != 0) {
         VideoCallbacks.stop();
         stopVideoDepacketizer();
