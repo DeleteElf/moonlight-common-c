@@ -985,10 +985,9 @@ typedef void (*ProxyChannelCallback)(int);
 
 typedef enum _SocketChannelType
 {
-    SocketChannelMessage = 0 , //48010的工作
-    SocketChannelControl,
-    SocketChannelVideo ,
-    SocketChannelAudio
+    SocketChannelControl=0,
+    SocketChannelAudio,
+    SocketChannelVideo
 } SocketChannelType;
 
 extern ProxyCallback proxySendCallback;
