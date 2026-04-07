@@ -1529,9 +1529,11 @@ int sendInputPacketOnControlStream(unsigned char* data, int length, uint8_t chan
 
 // Called by the input stream to flush queued packets before a batching wait
 void flushInputOnControlStream(void) {
-    PltLockMutex(&enetMutex);
-    enet_host_flush(client);
-    PltUnlockMutex(&enetMutex);
+  if(proxySendCallback==NULL){//优化升级，当使用代理时，不再需要flush
+      PltLockMutex(&enetMutex);
+      enet_host_flush(client);
+      PltUnlockMutex(&enetMutex);
+  }
 }
 
 bool isControlDataInTransit(void) {
