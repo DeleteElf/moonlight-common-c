@@ -1,6 +1,10 @@
 ## moonlight-common-c   (基于super系列配套)
 
 ### 版本变更日志
+#### 1.0.26.040701
+1. 修改通道协议，去掉message。
+2. flushInputOnControlStream时，如果使用代理，不再flush。
+
 #### 1.0.26.032301
 1. 完成端口切换，切换后的端口为48000, 48001, 48002,48003, 48010（rstp tcp）
 
