@@ -928,6 +928,7 @@ bool parseSdpAttributeToInt(const char* payload, const char* name, int* val) {
 
 // Perform RTSP Handshake with the streaming server machine as part of the connection process
 int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
+    //todo:在这里设置RTSP网络，也可以是websocket
     int ret;
 
     LC_ASSERT(RtspPortNumber != 0);
@@ -1303,9 +1304,7 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
         int error = -1;
         char* connectData;
 
-        if (!setupStream(&response,
-                         controlStreamId,
-                         &error)) {
+        if (!setupStream(&response,controlStreamId,&error)) {
             Limelog("RTSP SETUP streamid=control request failed: %d\n", error);
             ret = error;
             goto Exit;
