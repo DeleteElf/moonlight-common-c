@@ -566,6 +566,12 @@ const char* LiGetStageName(int stage);
 // ENet for the control stream (very old versions), or if the ENet peer is not connected.
 // This function may only be called between LiStartConnection() and LiStopConnection().
 bool LiGetEstimatedRttInfo(uint32_t* estimatedRtt, uint32_t* estimatedRttVariance);
+//获取连接标识数据 用于session_p->config.mlFeatureFlags & ML_FF_SESSION_ID_V1
+uint32_t LiGetConnectData();
+
+//void* LiBuildENetPacket(short ptype, short paylen, const void* payload, uint8_t channelId, uint32_t flags, bool moreData);
+
+bool LiSendENetMessage(void* client,void* peer,short ptype, short paylen, const void* payload, uint8_t channelId, uint32_t flags, bool moreData);
 
 // This function queues a relative mouse move event to be sent to the remote server.
 int LiSendMouseMoveEvent(short deltaX, short deltaY);

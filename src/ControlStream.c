@@ -540,13 +540,13 @@ static void enetPacketFreeCb(ENetPacket* packet) {
 
 
 // Must be called with enetMutex held
-static bool isPacketSentWaitingForAck(ENetPacket* packet) {
+static bool isPacketSentWaitingForAck(ENetPeer* peerConnection, ENetPacket* packet) {
     ENetOutgoingCommand* outgoingCommand = NULL;
     ENetListIterator currentCommand;
 
     // Look for our packet on the sent commands list
-    for (currentCommand = enet_list_begin(&peer->sentReliableCommands);
-         currentCommand != enet_list_end(&peer->sentReliableCommands);
+    for (currentCommand = enet_list_begin(&peerConnection->sentReliableCommands);
+         currentCommand != enet_list_end(&peerConnection->sentReliableCommands);
          currentCommand = enet_list_next(currentCommand))
     {
         outgoingCommand = (ENetOutgoingCommand*)currentCommand;
@@ -558,7 +558,7 @@ static bool isPacketSentWaitingForAck(ENetPacket* packet) {
     return false;
 }
 
-static bool sendMessageEnet(short ptype, short paylen, const void* payload, uint8_t channelId, uint32_t flags, bool moreData) {
+bool LiSendENetMessage(void* _client,void* _peer,short ptype, short paylen, const void* payload, uint8_t channelId, uint32_t flags, bool moreData){
     ENetPacket* enetPacket;
     int err;
 
@@ -574,9 +574,7 @@ static bool sendMessageEnet(short ptype, short paylen, const void* payload, uint
         PNVCTL_ENET_PACKET_HEADER_V2 packet;
         char tempBuffer[256];
 
-        enetPacket = enet_packet_create(NULL,
-                                        sizeof(*encPacket) + AES_GCM_TAG_LENGTH + sizeof(*packet) + paylen,
-                                        flags);
+        enetPacket = enet_packet_create(NULL,sizeof(*encPacket) + AES_GCM_TAG_LENGTH + sizeof(*packet) + paylen,flags);
         if (enetPacket == NULL) {
             return false;
         }
@@ -609,8 +607,7 @@ static bool sendMessageEnet(short ptype, short paylen, const void* payload, uint
     }
     else {
         PNVCTL_ENET_PACKET_HEADER_V1 packet;
-        enetPacket = enet_packet_create(NULL, sizeof(*packet) + paylen,
-                                        flags);
+        enetPacket = enet_packet_create(NULL, sizeof(*packet) + paylen,flags);
         if (enetPacket == NULL) {
             return false;
         }
@@ -629,26 +626,28 @@ static bool sendMessageEnet(short ptype, short paylen, const void* payload, uint
     enetPacket->userData = (void*)&packetFreed;
     enetPacket->freeCallback = enetPacketFreeCb;
 
+    ENetPeer* peerConnection=(ENetPeer*)_peer;
     // Always use channel 0 for GFE and if the requested channel exceeds
     // the peer's supported channel count.
-    if (!IS_SUNSHINE() || channelId >= peer->channelCount) {
+    if (!IS_SUNSHINE() || channelId >= peerConnection->channelCount) {
         channelId = 0;
     }
 
     // Queue the packet to be sent
-    err = enet_peer_send(peer, channelId, enetPacket);
+    err = enet_peer_send(peerConnection, channelId, enetPacket);
     bool packetQueued = (err == 0);
 
     // If there is no more data coming soon, send the packet now
     if (!moreData && packetQueued) {
-        err = enet_host_service(client, NULL, 0);
+        ENetHost* clientHost=(ENetHost*)_client;
+        err = enet_host_service(clientHost, NULL, 0);
 
         // Wait until the packet is actually sent to provide backpressure on senders
         if (flags & ENET_PACKET_FLAG_RELIABLE) {
             // Don't wait longer than 10 milliseconds to avoid blocking callers for too long
             for (int i = 0; err >= 0 && i < 10; i++) {
                 // Break on disconnected, acked/freed, or sent (pending ack).
-                if (peer->state != ENET_PEER_STATE_CONNECTED || packetFreed || isPacketSentWaitingForAck(enetPacket)) {
+                if (peerConnection->state != ENET_PEER_STATE_CONNECTED || packetFreed || isPacketSentWaitingForAck(peerConnection, enetPacket)) {
                     break;
                 }
 
@@ -658,12 +657,12 @@ static bool sendMessageEnet(short ptype, short paylen, const void* payload, uint
                 PltLockMutex(&enetMutex);
 
                 // Try to send the packet again
-                err = enet_host_service(client, NULL, 0);
+                err = enet_host_service(clientHost, NULL, 0);
             }
 
-            if (err >= 0 && peer->state == ENET_PEER_STATE_CONNECTED && !packetFreed && !isPacketSentWaitingForAck(enetPacket)) {
+            if (err >= 0 && peerConnection->state == ENET_PEER_STATE_CONNECTED && !packetFreed && !isPacketSentWaitingForAck(peerConnection,enetPacket)) {
                 Limelog("Control message took over 10 ms to send (net latency: %u ms | packet loss: %f%%)\n",
-                        peer->roundTripTime, peer->packetLoss / (float)ENET_PEER_PACKET_LOSS_SCALE);
+                        peerConnection->roundTripTime, peerConnection->packetLoss / (float)ENET_PEER_PACKET_LOSS_SCALE);
             }
         }
     }
@@ -685,6 +684,10 @@ static bool sendMessageEnet(short ptype, short paylen, const void* payload, uint
     }
 
     return true;
+}
+
+static bool sendMessageEnet(short ptype, short paylen, const void* payload, uint8_t channelId, uint32_t flags, bool moreData) {
+    return LiSendENetMessage(client,peer,ptype,paylen,payload,channelId,flags,moreData);
 }
 
 static bool sendMessageTcp(short ptype, short paylen, const void* payload) {
@@ -1568,6 +1571,10 @@ bool LiGetEstimatedRttInfo(uint32_t* estimatedRtt, uint32_t* estimatedRttVarianc
     PltUnlockMutex(&enetMutex);
 
     return ret;
+}
+
+uint32_t LiGetConnectData(){
+    return ControlConnectData;
 }
 
 // Starts the control stream
