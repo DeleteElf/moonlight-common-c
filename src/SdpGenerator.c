@@ -272,29 +272,27 @@ static PSDP_OPTION getAttributesList(char*urlSafeAddr) {
         snprintf(payloadStr, sizeof(payloadStr), "%u", moonlightFeatureFlags);
         err |= addAttributeString(&optionHead, "x-ml-general.featureFlags", payloadStr);
 
-        // New-style control stream encryption is low overhead, so we enable it any time it is supported
+        // 新型控制流加密的开销较低，因此只要条件允许，我们就会启用它
         if (EncryptionFeaturesSupported & SS_ENC_CONTROL_V2) {
             EncryptionFeaturesEnabled |= SS_ENC_CONTROL_V2;
         }
 
-        // If video encryption is supported by the host and desired by the client, use it
+        // 如果主机支持视频加密且客户端有此需求，则使用视频加密
         if ((EncryptionFeaturesSupported & SS_ENC_VIDEO) && (StreamConfig.encryptionFlags & ENCFLG_VIDEO)) {
             EncryptionFeaturesEnabled |= SS_ENC_VIDEO;
         }
         else if ((EncryptionFeaturesRequested & SS_ENC_VIDEO) && !(StreamConfig.encryptionFlags & ENCFLG_VIDEO)) {
-            // If video encryption is explicitly requested by the host but *not* by the client,
-            // we'll encrypt anyway (since we are capable of doing so) and print a warning.
+            // 如果主机明确请求视频加密，但客户端并未请求，我们仍会进行加密（因为我们有能力这样做）并打印一条警告。
             Limelog("Enabling video encryption by host request despite client opt-out. Performance may suffer!");
             EncryptionFeaturesEnabled |= SS_ENC_VIDEO;
         }
 
-        // If audio encryption is supported by the host and desired by the client, use it
+        // 如果主机支持音频加密且客户端有此需求，则使用它
         if ((EncryptionFeaturesSupported & SS_ENC_AUDIO) && (StreamConfig.encryptionFlags & ENCFLG_AUDIO)) {
             EncryptionFeaturesEnabled |= SS_ENC_AUDIO;
         }
         else if ((EncryptionFeaturesRequested & SS_ENC_AUDIO) && !(StreamConfig.encryptionFlags & ENCFLG_AUDIO)) {
-            // If audio encryption is explicitly requested by the host but *not* by the client,
-            // we'll encrypt anyway (since we are capable of doing so) and print a warning.
+            // 如果主机明确请求进行音频加密，但客户端并未提出此请求，我们仍会进行加密（因为我们有能力这样做）并打印一条警告。
             Limelog("Enabling audio encryption by host request despite client opt-out. Audio quality may suffer!");
             EncryptionFeaturesEnabled |= SS_ENC_AUDIO;
         }
