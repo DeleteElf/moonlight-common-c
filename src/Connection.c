@@ -575,7 +575,10 @@ Cleanup:
 }
 
 const char* LiGetLaunchUrlQueryParameters(void) {
-    // v0 = Video encryption and control stream encryption v2
-    // v1 = RTSP encryption
-    return "&corever=1";
+    //moonlight的原生设计是默认图像和控制流需要加密，如果版本大于或等于1，则rtsp也加密
+    //我们修改成不用加密，或由传输决定是否加密，而不再在逻辑内强制要求加密
+    // 0 = none
+    // 1 = RTSP encryption and Video encryption and control stream encryption v2
+    //    return "&corever=1";
+    return "";
 }
