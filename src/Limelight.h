@@ -986,7 +986,7 @@ uint32_t LiGetHostFeatureFlags(void);
 // proxy support
 // return int value,in send is error code,in receive is receive length!
 // byte data,length,channelId,dataType(-1 is invalid)
-typedef int (*ProxyCallback)(const void*,int,int,int);
+typedef int (*ProxyCallback)(void*,int,int,int);
 typedef void (*ProxyChannelCallback)(int);
 
 typedef enum _SocketChannelType

@@ -95,7 +95,7 @@ static void VideoPingThreadProc(void* context) {
         }
         else {
             if(proxySendCallback!=NULL){
-                proxySendCallback(legacyPingData, sizeof(legacyPingData),SocketChannelAudio,-1);
+                proxySendCallback(legacyPingData, sizeof(legacyPingData),SocketChannelVideo,-1);
             }else {
                 sendto(rtpSocket, legacyPingData, sizeof(legacyPingData), 0, (struct sockaddr*)&saddr, AddrLen);
             }
@@ -158,19 +158,20 @@ static void VideoReceiveThreadProc(void* context) {
                 break;
             }
         }
-
+        int length=0;
         if(proxyReceiveCallback!=NULL){
-            proxyReceiveCallback(encrypted ? encryptedBuffer : buffer,receiveSize,SocketChannelAudio,-1);
+            length= proxyReceiveCallback(encrypted ? encryptedBuffer : buffer,receiveSize,SocketChannelVideo,-1);
+            Limelog("Received video packet %p\n", buffer);
         }else {
-            err = recvUdpSocket(rtpSocket,encrypted ? encryptedBuffer : buffer,receiveSize,useSelect);
+            length = recvUdpSocket(rtpSocket,encrypted ? encryptedBuffer : buffer,receiveSize,useSelect);
         }
 
-        if (err < 0) {
+        if (length < 0) {
             Limelog("Video Receive: recvUdpSocket() failed: %d\n", (int)LastSocketError());
             ListenerCallbacks.connectionTerminated(LastSocketFail());
             break;
         }
-        else if  (err == 0) {
+        else if  (length == 0) {
             if (!receivedDataFromPeer) {
                 // If we wait many seconds without ever receiving a video packet,
                 // assume something is broken and terminate the connection.
@@ -205,7 +206,7 @@ static void VideoReceiveThreadProc(void* context) {
         }
 #endif
 
-        if (err < minSize) {
+        if (length < minSize) {
             // Runt packet
             continue;
         }
@@ -243,8 +244,8 @@ static void VideoReceiveThreadProc(void* context) {
                                    (unsigned char*)StreamConfig.remoteInputAesKey, sizeof(StreamConfig.remoteInputAesKey),
                                    encHeader->iv, sizeof(encHeader->iv),
                                    encHeader->tag, sizeof(encHeader->tag),
-                                   ((unsigned char*)(encHeader + 1)), err - sizeof(ENC_VIDEO_HEADER), // The ciphertext is after the header
-                                   (unsigned char*)buffer, &err)) {
+                                   ((unsigned char*)(encHeader + 1)), length - sizeof(ENC_VIDEO_HEADER), // The ciphertext is after the header
+                                   (unsigned char*)buffer, &length)) {
                 Limelog("Failed to decrypt video packet!\n");
                 continue;
             }
@@ -257,7 +258,7 @@ static void VideoReceiveThreadProc(void* context) {
         packet->ssrc = BE32(packet->ssrc);
 
         // Limelog("receive video packet===========================>%d\n",packet->ssrc);
-        queueStatus = RtpvAddPacket(&rtpQueues[packet->ssrc], packet, err, (PRTPV_QUEUE_ENTRY)&buffer[decryptedSize]);
+        queueStatus = RtpvAddPacket(&rtpQueues[packet->ssrc], packet, length, (PRTPV_QUEUE_ENTRY)&buffer[decryptedSize]);
         if (queueStatus == RTPF_RET_QUEUED) {
             // The queue owns the buffer
             buffer = NULL;
