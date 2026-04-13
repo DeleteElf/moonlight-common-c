@@ -161,7 +161,6 @@ static void VideoReceiveThreadProc(void* context) {
         int length=0;
         if(proxyReceiveCallback!=NULL){
             length= proxyReceiveCallback(encrypted ? encryptedBuffer : buffer,receiveSize,SocketChannelVideo,-1);
-            Limelog("Received video packet %p\n", buffer);
         }else {
             length = recvUdpSocket(rtpSocket,encrypted ? encryptedBuffer : buffer,receiveSize,useSelect);
         }
