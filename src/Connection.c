@@ -38,15 +38,15 @@ uint32_t EncryptionFeaturesSupported;
 uint32_t EncryptionFeaturesRequested;
 uint32_t EncryptionFeaturesEnabled;
 
-ProxyCallback proxySendCallback;
-ProxyCallback proxyReceiveCallback;
+ProxySendCallback proxySendCallback;
+ProxyReceiveCallback proxyReceiveCallback;
 ProxyChannelCallback proxyChannelStopCallback;
 ProxyChannelCallback proxyChannelStartCallback;
-void LiSetProxySend(ProxyCallback callback){
+void LiSetProxySend(ProxySendCallback callback){
     proxySendCallback=callback;
 }
 
-void LiSetProxyReceive(ProxyCallback callback){
+void LiSetProxyReceive(ProxyReceiveCallback callback){
     proxyReceiveCallback=callback;
 }
 

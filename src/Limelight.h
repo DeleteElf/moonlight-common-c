@@ -986,7 +986,8 @@ uint32_t LiGetHostFeatureFlags(void);
 // proxy support
 // return int value,in send is error code,in receive is receive length!
 // byte data,length,channelId,dataType(-1 is invalid)
-typedef int (*ProxyCallback)(void*,int,int,int);
+typedef int (*ProxySendCallback)(const void*,int,int,int);
+typedef int (*ProxyReceiveCallback)(void*,int,int,int);
 typedef void (*ProxyChannelCallback)(int);
 
 typedef enum _SocketChannelType
@@ -996,13 +997,13 @@ typedef enum _SocketChannelType
     SocketChannelVideo
 } SocketChannelType;
 
-extern ProxyCallback proxySendCallback;
-extern ProxyCallback proxyReceiveCallback;
+extern ProxySendCallback proxySendCallback;
+extern ProxyReceiveCallback proxyReceiveCallback;
 extern ProxyChannelCallback proxyChannelStopCallback;
 extern ProxyChannelCallback proxyChannelStartCallback;
 
-void LiSetProxySend(ProxyCallback callback);
-void LiSetProxyReceive(ProxyCallback callback);
+void LiSetProxySend(ProxySendCallback callback);
+void LiSetProxyReceive(ProxyReceiveCallback callback);
 void LiSetProxyChannelStop(ProxyChannelCallback callback);
 void LiSetProxyChannelStart(ProxyChannelCallback callback);
 // #endif
