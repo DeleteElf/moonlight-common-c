@@ -133,35 +133,44 @@ static void VideoReceiveThreadProc(void* context) {
         useSelect = false;
     }
 
-    // Allocate a staging buffer to use for each received packet
-    if (encrypted) {
-        encryptedBuffer = (char*)malloc(receiveSize);
-        if (encryptedBuffer == NULL) {
-            Limelog("Video Receive: malloc() failed\n");
-            ListenerCallbacks.connectionTerminated(-1);
-            return;
-        }
-    }
-    else {
-        encryptedBuffer = NULL;
-    }
+
 
     waitingForVideoMs = 0;
     while (!PltIsThreadInterrupted(&receiveThread)) {
         PRTP_PACKET packet;
-
-        if (buffer == NULL) {
-            buffer = (char*)malloc(bufferSize);
-            if (buffer == NULL) {
-                Limelog("Video Receive: malloc() failed\n");
-                ListenerCallbacks.connectionTerminated(-1);
-                break;
-            }
-        }
         int length=0;
         if(proxyReceiveCallback!=NULL){
-            length= proxyReceiveCallback(encrypted ? encryptedBuffer : buffer,receiveSize,SocketChannelVideo,-1);
+            BufferPacket bufferPacket;
+            bufferPacket.len=bufferSize;
+            proxyReceiveCallback(&bufferPacket,SocketChannelVideo);
+            length=bufferPacket.len;
+            if(encrypted){
+                encryptedBuffer=bufferPacket.buf;
+            }else{
+                buffer=bufferPacket.buf;
+            }
         }else {
+            // Allocate a staging buffer to use for each received packet
+            if (encrypted) {
+                encryptedBuffer = (char*)malloc(receiveSize);
+                if (encryptedBuffer == NULL) {
+                    Limelog("Video Receive: malloc() failed\n");
+                    ListenerCallbacks.connectionTerminated(-1);
+                    return;
+                }
+            }
+            else {
+                encryptedBuffer = NULL;
+            }
+
+            if (buffer == NULL) {
+                buffer = (char*)malloc(bufferSize);
+                if (buffer == NULL) {
+                    Limelog("Video Receive: malloc() failed\n");
+                    ListenerCallbacks.connectionTerminated(-1);
+                    break;
+                }
+            }
             length = recvUdpSocket(rtpSocket,encrypted ? encryptedBuffer : buffer,receiveSize,useSelect);
         }
 

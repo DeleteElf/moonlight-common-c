@@ -981,13 +981,19 @@ void LiRequestIdrFrame(int trackIndex);
 #define LI_FF_CONTROLLER_TOUCH_EVENTS 0x02 // LiSendControllerTouchEvent() supported
 uint32_t LiGetHostFeatureFlags(void);
 
+typedef struct _BufferPacket{
+    unsigned long len;
+    char* buf;
+} BufferPacket,*LPBufferPacket;
+
 // #ifndef SOCKET_PROXY_SUPPORT
 // #define SOCKET_PROXY_SUPPORT
 // proxy support
 // return int value,in send is error code,in receive is receive length!
 // byte data,length,channelId,dataType(-1 is invalid)
 typedef int (*ProxySendCallback)(const void*,int,int,int);
-typedef int (*ProxyReceiveCallback)(void*,int,int,int);
+// BufferPacket* buffer,channelId
+typedef int (*ProxyReceiveCallback)(BufferPacket*,int);
 typedef void (*ProxyChannelCallback)(int);
 
 typedef enum _SocketChannelType
