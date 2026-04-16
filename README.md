@@ -1,6 +1,10 @@
 ## moonlight-common-c   (基于super系列配套)
 
 ### 版本变更日志
+#### 1.0.26.041601
+1. 完善moonlight对于代理的支持。
+2. 针对rtsp协议，新增http协议支持，需要自己进行具体实现。
+
 #### 1.0.26.040701
 1. 修改通道协议，去掉message。
 2. flushInputOnControlStream时，如果使用代理，不再flush。
