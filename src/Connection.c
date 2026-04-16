@@ -58,6 +58,11 @@ void LiSetProxyChannelStart(ProxyChannelCallback callback){
     proxyChannelStartCallback=callback;
 }
 
+HttpRtspMessageCallback httpRtspMessageCallback;
+void LiSetHttpRtspMessage(HttpRtspMessageCallback callback){
+    httpRtspMessageCallback=callback;
+}
+
 // Connection stages
 static const char* stageNames[STAGE_MAX] = {
     "none",
