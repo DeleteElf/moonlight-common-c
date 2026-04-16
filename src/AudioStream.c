@@ -265,24 +265,21 @@ static void AudioReceiveThreadProc(void* context) {
 
     waitingForAudioMs = 0;
     while (!PltIsThreadInterrupted(&receiveThread)) {
-
+        if (packet == NULL) {
+            packet = (PQUEUED_AUDIO_PACKET)malloc(sizeof(*packet));
+            if (packet == NULL) {
+                Limelog("Audio Receive: malloc() failed\n");
+                ListenerCallbacks.connectionTerminated(-1);
+                break;
+            }
+        }
         if(proxyReceiveCallback!=NULL){
             BufferPacket bufferPacket;
             bufferPacket.len=MAX_PACKET_SIZE;
             proxyReceiveCallback(&bufferPacket,SocketChannelAudio);
             packet->header.size=bufferPacket.len;
-            // packet->data=bufferPacket.buf;
-            memcpy(packet->data,bufferPacket.buf,bufferPacket.len);
-            free(bufferPacket.buf);
+            memcpy_s(&packet->data[0],MAX_PACKET_SIZE,bufferPacket.buf,bufferPacket.len);
         }else {
-            if (packet == NULL) {
-                packet = (PQUEUED_AUDIO_PACKET)malloc(sizeof(*packet));
-                if (packet == NULL) {
-                    Limelog("Audio Receive: malloc() failed\n");
-                    ListenerCallbacks.connectionTerminated(-1);
-                    break;
-                }
-            }
             packet->header.size = recvUdpSocket(rtpSocket, &packet->data[0], MAX_PACKET_SIZE, useSelect);
         }
         if (packet->header.size < 0) {
