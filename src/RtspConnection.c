@@ -515,7 +515,10 @@ static bool transactRtspMessageHttp(PRTSP_MESSAGE request, PRTSP_MESSAGE respons
         return ret;
     }
     if (httpRtspMessageCallback) {
-        *error = httpRtspMessageCallback(rtspTargetUrl,serializedMessage, &bufferPacket);
+        BufferPacket bufferPacket_req;
+        bufferPacket_req.buf=serializedMessage;
+        bufferPacket_req.len=messageLen;
+        *error = httpRtspMessageCallback(rtspTargetUrl,&bufferPacket_req, &bufferPacket);
         ret = true;
     } else {
         Limelog("使用http协议通讯,但是没有注册对应的回调！！！\n");

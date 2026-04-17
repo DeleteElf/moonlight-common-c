@@ -1016,7 +1016,7 @@ void LiSetProxyChannelStart(ProxyChannelCallback callback);
 
 
 // rtsp http protocol support
-typedef int (*HttpRtspMessageCallback)(char*,char*,BufferPacket*);
+typedef int (*HttpRtspMessageCallback)(char*,BufferPacket*,BufferPacket*);
 extern HttpRtspMessageCallback httpRtspMessageCallback;
 void LiSetHttpRtspMessage(HttpRtspMessageCallback callback);
 
