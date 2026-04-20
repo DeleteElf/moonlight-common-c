@@ -162,14 +162,10 @@ static void VideoReceiveThreadProc(void* context) {
         int length=0;
         if(proxyReceiveCallback!=NULL){
             BufferPacket bufferPacket;
-            bufferPacket.len=bufferSize;
+            bufferPacket.len=receiveSize;
+            bufferPacket.buf=encrypted?encryptedBuffer:buffer;
             proxyReceiveCallback(&bufferPacket,SocketChannelVideo);
-            length=bufferPacket.len;
-            if(encrypted){
-                memcpy(encryptedBuffer,bufferPacket.buf,bufferPacket.len);
-            }else{
-                memcpy(buffer,bufferPacket.buf,bufferPacket.len);
-            }
+            length=bufferPacket.len+sizeof(RTPV_QUEUE_ENTRY);
         }else {
             length = recvUdpSocket(rtpSocket,encrypted ? encryptedBuffer : buffer,receiveSize,useSelect);
         }

@@ -276,9 +276,9 @@ static void AudioReceiveThreadProc(void* context) {
         if(proxyReceiveCallback!=NULL){
             BufferPacket bufferPacket;
             bufferPacket.len=MAX_PACKET_SIZE;
+            bufferPacket.buf=&packet->data[0];
             proxyReceiveCallback(&bufferPacket,SocketChannelAudio);
             packet->header.size=bufferPacket.len;
-            memcpy_s(&packet->data[0],MAX_PACKET_SIZE,bufferPacket.buf,bufferPacket.len);
         }else {
             packet->header.size = recvUdpSocket(rtpSocket, &packet->data[0], MAX_PACKET_SIZE, useSelect);
         }
