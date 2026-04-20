@@ -165,6 +165,11 @@ static void VideoReceiveThreadProc(void* context) {
             bufferPacket.len=receiveSize;
             bufferPacket.buf=encrypted?encryptedBuffer:buffer;
             proxyReceiveCallback(&bufferPacket,SocketChannelVideo);
+            if (bufferPacket.len==0) {
+                Limelog("从代理接收数据失败\n", (int)LastSocketError());
+                ListenerCallbacks.connectionTerminated(LastSocketFail());
+                break;
+            }
             length=bufferPacket.len+sizeof(RTPV_QUEUE_ENTRY);
         }else {
             length = recvUdpSocket(rtpSocket,encrypted ? encryptedBuffer : buffer,receiveSize,useSelect);
