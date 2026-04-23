@@ -278,6 +278,11 @@ static void AudioReceiveThreadProc(void* context) {
             bufferPacket.len=MAX_PACKET_SIZE;
             bufferPacket.buf=&packet->data[0];
             proxyReceiveCallback(&bufferPacket,SocketChannelAudio);
+            if (bufferPacket.len==0) {
+                Limelog("从代理接收音频数据失败\n", (int)LastSocketError());
+                ListenerCallbacks.connectionTerminated(LastSocketFail());
+                break;
+            }
             packet->header.size=bufferPacket.len;
         }else {
             packet->header.size = recvUdpSocket(rtpSocket, &packet->data[0], MAX_PACKET_SIZE, useSelect);

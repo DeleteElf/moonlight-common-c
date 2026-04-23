@@ -133,8 +133,6 @@ static void VideoReceiveThreadProc(void* context) {
         useSelect = false;
     }
 
-
-
     waitingForVideoMs = 0;
     while (!PltIsThreadInterrupted(&receiveThread)) {
         // Allocate a staging buffer to use for each received packet
@@ -166,7 +164,7 @@ static void VideoReceiveThreadProc(void* context) {
             bufferPacket.buf=encrypted?encryptedBuffer:buffer;
             proxyReceiveCallback(&bufferPacket,SocketChannelVideo);
             if (bufferPacket.len==0) {
-                Limelog("从代理接收数据失败\n", (int)LastSocketError());
+                Limelog("从代理接收视频数据失败\n", (int)LastSocketError());
                 ListenerCallbacks.connectionTerminated(LastSocketFail());
                 break;
             }
