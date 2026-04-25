@@ -168,7 +168,7 @@ static void VideoReceiveThreadProc(void* context) {
                 ListenerCallbacks.connectionTerminated(LastSocketFail());
                 break;
             }
-            length=bufferPacket.len+sizeof(RTPV_QUEUE_ENTRY);
+            length=  bufferPacket.len;
         }else {
             length = recvUdpSocket(rtpSocket,encrypted ? encryptedBuffer : buffer,receiveSize,useSelect);
         }
