@@ -1250,9 +1250,6 @@ static void lossStatsThreadFunc(void* context) {
             if (IS_SUNSHINE()) {
                 PQUEUED_FRAME_FEC_STATUS queuedFrameStatus;
 
-                // Sunshine should always use ENet for control messages
-                LC_ASSERT(peer != NULL);
-
                 while (LbqPollQueueElement(&frameFecStatusQueue, (void**)&queuedFrameStatus) == LBQ_SUCCESS) {
                     // Send as an unreliable packet, since it's not a critical message
                     if (!sendMessageEnet(SS_FRAME_FEC_PTYPE,
@@ -1581,7 +1578,8 @@ uint32_t LiGetConnectData(){
 int startControlStream(void) {
     if(proxyChannelStartCallback!=NULL){
         proxyChannelStartCallback(SocketChannelControl);
-        return 0;
+        // return 0;
+        goto event_handler; //修复代理模式下 事件没有工作的问题
     }
 
     int err;
@@ -1688,7 +1686,7 @@ int startControlStream(void) {
         }
         return err;
     }
-
+event_handler:
     // Send START A
     if (!sendMessageAndDiscardReply(packetTypes[IDX_START_A],
                                     payloadLengths[IDX_START_A],
