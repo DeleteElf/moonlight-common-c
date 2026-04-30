@@ -1463,9 +1463,9 @@ static void requestIdrFrameFunc(void* context) {
 // Stops the control stream
 int stopControlStream(void) {
     stopping = true;
-    if(proxyChannelStopCallback!=NULL){
+    if (proxyChannelStopCallback != NULL) {
         proxyChannelStopCallback(SocketChannelControl);
-        return 0;
+        // return 0; //不再直接返回，仍要执行注销 线程逻辑
     }
 
     LbqSignalQueueShutdown(&invalidReferenceFrameTuples);
@@ -1480,14 +1480,17 @@ int stopControlStream(void) {
         shutdownTcpSocket(ctlSock);
     }
 
+    if (proxyChannelStopCallback == NULL) { //这个线程与enet深度耦合，暂时抛弃
+        PltInterruptThread(&controlReceiveThread);
+        PltJoinThread(&controlReceiveThread);
+    }
+
     PltInterruptThread(&lossStatsThread);
     PltInterruptThread(&requestIdrFrameThread);
-    PltInterruptThread(&controlReceiveThread);
     PltInterruptThread(&asyncCallbackThread);
 
     PltJoinThread(&lossStatsThread);
     PltJoinThread(&requestIdrFrameThread);
-    PltJoinThread(&controlReceiveThread);
     PltJoinThread(&asyncCallbackThread);
 
     // We will only have an RFI thread if RFI is enabled
@@ -1579,7 +1582,7 @@ int startControlStream(void) {
     if(proxyChannelStartCallback!=NULL){
         proxyChannelStartCallback(SocketChannelControl);
         // return 0;
-        goto event_handler; //修复代理模式下 事件没有工作的问题
+        goto event_handler; //修复代理模式下 事件没有工作的问题,以下代码到跳跃点与enet深度耦合
     }
 
     int err;
@@ -1686,7 +1689,7 @@ int startControlStream(void) {
         }
         return err;
     }
-event_handler:
+
     // Send START A
     if (!sendMessageAndDiscardReply(packetTypes[IDX_START_A],
                                     payloadLengths[IDX_START_A],
@@ -1754,7 +1757,7 @@ event_handler:
         }
         return err;
     }
-
+event_handler: //以上逻辑与enet深度耦合，执行跳过
     err = PltCreateThread("LossStats", lossStatsThreadFunc, NULL, &lossStatsThread);
     if (err != 0) {
         stopping = true;
