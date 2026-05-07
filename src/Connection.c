@@ -60,7 +60,8 @@ void LiSetProxyChannelStart(ProxyChannelCallback callback){
 
 HttpRtspMessageCallback httpRtspMessageCallback;
 void LiSetHttpRtspMessage(HttpRtspMessageCallback callback){
-    httpRtspMessageCallback=callback;
+    if(httpRtspMessageCallback!=callback)
+        httpRtspMessageCallback=callback;
 }
 
 // Connection stages
