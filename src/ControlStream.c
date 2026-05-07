@@ -629,7 +629,7 @@ bool LiSendENetMessage(void* _client,void* _peer,short ptype, short paylen, cons
     ENetPeer* peerConnection=(ENetPeer*)_peer;
     // Always use channel 0 for GFE and if the requested channel exceeds
     // the peer's supported channel count.
-    if (!IS_SUNSHINE() || channelId >= peerConnection->channelCount) {
+    if (!IS_SUNSHINE() || (peerConnection&&channelId >= peerConnection->channelCount)) {
         channelId = 0;
     }
 
@@ -687,7 +687,9 @@ bool LiSendENetMessage(void* _client,void* _peer,short ptype, short paylen, cons
 }
 
 static bool sendMessageEnet(short ptype, short paylen, const void* payload, uint8_t channelId, uint32_t flags, bool moreData) {
-    return LiSendENetMessage(client,peer,ptype,paylen,payload,channelId,flags,moreData);
+    if(client&&peer)//从代理断开时，这边是空的
+      return LiSendENetMessage(client,peer,ptype,paylen,payload,channelId,flags,moreData);
+    return false;
 }
 
 static bool sendMessageTcp(short ptype, short paylen, const void* payload) {

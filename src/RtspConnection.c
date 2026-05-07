@@ -524,8 +524,10 @@ static bool transactRtspMessageHttp(PRTSP_MESSAGE request, PRTSP_MESSAGE respons
         Limelog("使用http协议通讯,但是没有注册对应的回调！！！\n");
         goto Exit;
     }
-    // Decrypt (if necessary) and deserialize the RTSP response
-    ret = unsealRtspMessage(bufferPacket.buf, bufferPacket.len, response);
+    if(bufferPacket.buf){
+      // Decrypt (if necessary) and deserialize the RTSP response
+      ret = unsealRtspMessage(bufferPacket.buf, bufferPacket.len, response);
+    }
     Exit:
     if (serializedMessage != NULL) {
         free(serializedMessage);
