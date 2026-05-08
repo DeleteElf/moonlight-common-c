@@ -990,25 +990,33 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
     // 2. The audio decoder has not declared that it is slow
     // 3. The stream is either local or not surround sound (to prevent MTU issues over the Internet)
     LC_ASSERT(StreamConfig.streamingRemotely != STREAM_CFG_AUTO);
-    if (StreamConfig.bitrate >= HIGH_AUDIO_BITRATE_THRESHOLD &&
+    if(strstr(serverInfo->rtspSessionUrl,"http")){//如果使用http的rtsp协议
+      parseUrlAddrFromRtspUrlString(serverInfo->rtspSessionUrl, urlAddr, sizeof(urlAddr));
+      PltSafeStrcpy(rtspTargetUrl, sizeof(rtspTargetUrl), serverInfo->rtspSessionUrl);
+      // snprintf(rtspTargetUrl, sizeof(rtspTargetUrl),"%s", serverInfo->rtspSessionUrl);// 复制字符串到新数组
+    }else {
+        if (StreamConfig.bitrate >= HIGH_AUDIO_BITRATE_THRESHOLD &&
             (AudioCallbacks.capabilities & CAPABILITY_SLOW_OPUS_DECODER) == 0 &&
-            (StreamConfig.streamingRemotely != STREAM_CFG_REMOTE || CHANNEL_COUNT_FROM_AUDIO_CONFIGURATION(StreamConfig.audioConfiguration) <= 2)) {
-        // If we have an RTSP URL string and it was successfully parsed and copied, use that string
-        if (serverInfo->rtspSessionUrl == NULL ||
+            (StreamConfig.streamingRemotely != STREAM_CFG_REMOTE ||
+             CHANNEL_COUNT_FROM_AUDIO_CONFIGURATION(StreamConfig.audioConfiguration) <= 2)) {
+            // If we have an RTSP URL string and it was successfully parsed and copied, use that string
+            if (serverInfo->rtspSessionUrl == NULL ||
                 !parseUrlAddrFromRtspUrlString(serverInfo->rtspSessionUrl, urlAddr, sizeof(urlAddr)) ||
                 !PltSafeStrcpy(rtspTargetUrl, sizeof(rtspTargetUrl), serverInfo->rtspSessionUrl)) {
-            // If an RTSP URL string was not provided or failed to parse, we will construct one now as best we can.
-            //
-            // NB: If the remote address is not a LAN address, the host will likely not enable high quality
-            // audio since it only does that for local streaming normally. We can avoid this limitation,
-            // but only if the caller gave us the RTSP session URL that it received from the host during launch.
-            addrToUrlSafeString(&RemoteAddr, urlAddr, sizeof(urlAddr));
-            snprintf(rtspTargetUrl, sizeof(rtspTargetUrl), "rtsp%s://%s:%u", useEnet ? "ru" : "", urlAddr, RtspPortNumber);
+                // If an RTSP URL string was not provided or failed to parse, we will construct one now as best we can.
+                //
+                // NB: If the remote address is not a LAN address, the host will likely not enable high quality
+                // audio since it only does that for local streaming normally. We can avoid this limitation,
+                // but only if the caller gave us the RTSP session URL that it received from the host during launch.
+                addrToUrlSafeString(&RemoteAddr, urlAddr, sizeof(urlAddr));
+                snprintf(rtspTargetUrl, sizeof(rtspTargetUrl), "rtsp%s://%s:%u", useEnet ? "ru" : "", urlAddr,
+                         RtspPortNumber);
+            }
+        } else {
+            PltSafeStrcpy(urlAddr, sizeof(urlAddr), "0.0.0.0");
+            snprintf(rtspTargetUrl, sizeof(rtspTargetUrl), "rtsp%s://%s:%u", useEnet ? "ru" : "", urlAddr,
+                     RtspPortNumber);
         }
-    }
-    else {
-        PltSafeStrcpy(urlAddr, sizeof(urlAddr), "0.0.0.0");
-        snprintf(rtspTargetUrl, sizeof(rtspTargetUrl), "rtsp%s://%s:%u", useEnet ? "ru" : "", urlAddr, RtspPortNumber);
     }
     //为处理RemoteAddr和urlAddr 不一致的问题
     //addrToUrlSafeString(&RemoteAddr, urlAddr, sizeof(urlAddr));
