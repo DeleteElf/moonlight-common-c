@@ -718,12 +718,12 @@ static bool sendMessageTcp(short ptype, short paylen, const void* payload) {
 }
 
 static bool sendMessageAndForget(short ptype, short paylen, const void* payload, uint8_t channelId, uint32_t flags, bool moreData) {
-  if(proxySendCallback!=NULL){
-      proxySendCallback(payload,paylen,SocketChannelControl,ptype);
-      return true ;
-  }else{
-      return sendMessageEnet(ptype, paylen, payload, channelId, flags, moreData);
-  }
+    if (proxySendCallback != NULL) {
+        proxySendCallback(payload, paylen, SocketChannelControl, ptype);
+        return true;
+    } else {
+        return sendMessageEnet(ptype, paylen, payload, channelId, flags, moreData);
+    }
 }
 
 static bool sendMessageAndDiscardReply(short ptype, short paylen, const void* payload, uint8_t channelId, uint32_t flags, bool moreData) {

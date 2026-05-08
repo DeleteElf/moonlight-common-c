@@ -111,8 +111,8 @@ static void cleanupFrameState(PVIDEO_DEPACKETIZER depacketizer) {
 
     while (depacketizer->nalChainHead) {
         lastEntry = (PLENTRY_INTERNAL)depacketizer->nalChainHead;
-        if(lastEntry){
-            depacketizer->nalChainHead = lastEntry->entry.next;
+        if(lastEntry&&lastEntry->entry.next){
+            depacketizer->nalChainHead = lastEntry->entry.next;//最后一个实体的下一个
             if(lastEntry->allocPtr)
               free(lastEntry->allocPtr);
         }
