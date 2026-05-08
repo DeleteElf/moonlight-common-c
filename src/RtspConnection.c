@@ -993,7 +993,6 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
     if(strstr(serverInfo->rtspSessionUrl,"http")){//如果使用http的rtsp协议
       parseUrlAddrFromRtspUrlString(serverInfo->rtspSessionUrl, urlAddr, sizeof(urlAddr));
       PltSafeStrcpy(rtspTargetUrl, sizeof(rtspTargetUrl), serverInfo->rtspSessionUrl);
-      // snprintf(rtspTargetUrl, sizeof(rtspTargetUrl),"%s", serverInfo->rtspSessionUrl);// 复制字符串到新数组
     }else {
         if (StreamConfig.bitrate >= HIGH_AUDIO_BITRATE_THRESHOLD &&
             (AudioCallbacks.capabilities & CAPABILITY_SLOW_OPUS_DECODER) == 0 &&
@@ -1018,9 +1017,6 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
                      RtspPortNumber);
         }
     }
-    //为处理RemoteAddr和urlAddr 不一致的问题
-    //addrToUrlSafeString(&RemoteAddr, urlAddr, sizeof(urlAddr));
-    //snprintf(rtspTargetUrl, sizeof(rtspTargetUrl), "rtsp%s://%s:%u", useEnet ? "ru" : "", urlAddr, RtspPortNumber);
     ret= resolveHostName(urlAddr, AF_UNSPEC, RtspPortNumber, &RtspRemoteAddr, &AddrLen);
     if (ret != 0) {
 
