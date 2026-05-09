@@ -190,12 +190,6 @@ static int addGen5Options(PSDP_OPTION* head) {
         // RI encryption is always enabled
         featureFlags = NVFF_BASE | NVFF_RI_ENCRYPTION;
 
-        // Enable audio encryption if the client opted in or the host required it
-        if ((StreamConfig.encryptionFlags & ENCFLG_AUDIO) || (EncryptionFeaturesEnabled & SS_ENC_AUDIO)) {
-            featureFlags |= NVFF_AUDIO_ENCRYPTION;
-            AudioEncryptionEnabled = true;
-        }
-
         snprintf(payloadStr, sizeof(payloadStr), "%u", featureFlags);
         err |= addAttributeString(head, "x-nv-general.featureFlags", payloadStr);
 
@@ -277,26 +271,6 @@ static PSDP_OPTION getAttributesList(char*urlSafeAddr) {
             EncryptionFeaturesEnabled |= SS_ENC_CONTROL_V2;
         }
 
-        // 如果主机支持视频加密且客户端有此需求，则使用视频加密
-        if ((EncryptionFeaturesSupported & SS_ENC_VIDEO) && (StreamConfig.encryptionFlags & ENCFLG_VIDEO)) {
-            EncryptionFeaturesEnabled |= SS_ENC_VIDEO;
-        }
-        else if ((EncryptionFeaturesRequested & SS_ENC_VIDEO) && !(StreamConfig.encryptionFlags & ENCFLG_VIDEO)) {
-            // 如果主机明确请求视频加密，但客户端并未请求，我们仍会进行加密（因为我们有能力这样做）并打印一条警告。
-            Limelog("Enabling video encryption by host request despite client opt-out. Performance may suffer!");
-            EncryptionFeaturesEnabled |= SS_ENC_VIDEO;
-        }
-
-        // 如果主机支持音频加密且客户端有此需求，则使用它
-        if ((EncryptionFeaturesSupported & SS_ENC_AUDIO) && (StreamConfig.encryptionFlags & ENCFLG_AUDIO)) {
-            EncryptionFeaturesEnabled |= SS_ENC_AUDIO;
-        }
-        else if ((EncryptionFeaturesRequested & SS_ENC_AUDIO) && !(StreamConfig.encryptionFlags & ENCFLG_AUDIO)) {
-            // 如果主机明确请求进行音频加密，但客户端并未提出此请求，我们仍会进行加密（因为我们有能力这样做）并打印一条警告。
-            Limelog("Enabling audio encryption by host request despite client opt-out. Audio quality may suffer!");
-            EncryptionFeaturesEnabled |= SS_ENC_AUDIO;
-        }
-
         snprintf(payloadStr, sizeof(payloadStr), "%u", EncryptionFeaturesEnabled);
         err |= addAttributeString(&optionHead, "x-ss-general.encryptionEnabled", payloadStr);
 
@@ -317,12 +291,6 @@ static PSDP_OPTION getAttributesList(char*urlSafeAddr) {
     snprintf(payloadStr, sizeof(payloadStr), "%d", StreamConfig.fps);
     err |= addAttributeString(&optionHead, "x-nv-video[0].maxFPS", payloadStr);
 
-    // Adjust the video packet size to account for encryption overhead
-    if (EncryptionFeaturesEnabled & SS_ENC_VIDEO) {
-        LC_ASSERT(StreamConfig.packetSize % 16 == 0);
-        StreamConfig.packetSize -= sizeof(ENC_VIDEO_HEADER);
-        LC_ASSERT(StreamConfig.packetSize % 16 == 0);
-    }
     snprintf(payloadStr, sizeof(payloadStr), "%d", StreamConfig.packetSize);
     err |= addAttributeString(&optionHead, "x-nv-video[0].packetSize", payloadStr);
 

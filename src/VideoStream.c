@@ -117,7 +117,7 @@ static void VideoReceiveThreadProc(void* context) {
     int waitingForVideoMs;
     bool encrypted;
 
-    encrypted = !!(EncryptionFeaturesEnabled & SS_ENC_VIDEO);
+    encrypted = false;// !!(EncryptionFeaturesEnabled & SS_ENC_VIDEO);
     decryptedSize = StreamConfig.packetSize + MAX_RTP_HEADER_SIZE;
     minSize = sizeof(RTP_PACKET) + (encrypted? sizeof(ENC_VIDEO_HEADER) : 0);
     receiveSize = decryptedSize + (encrypted ? sizeof(ENC_VIDEO_HEADER) : 0);

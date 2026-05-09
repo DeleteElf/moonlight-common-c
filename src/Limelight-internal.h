@@ -47,8 +47,6 @@ extern uint32_t SunshineFeatureFlags;
 
 // Encryption flags shared by Sunshine and Moonlight in RTSP
 #define SS_ENC_CONTROL_V2 0x01
-#define SS_ENC_VIDEO 0x02
-#define SS_ENC_AUDIO 0x04
 
 extern uint32_t EncryptionFeaturesSupported;
 extern uint32_t EncryptionFeaturesRequested;
