@@ -135,6 +135,7 @@ void destroyAudioStream(void) {
         if (pingThreadStarted) {
             PltInterruptThread(&udpPingThread);
             PltJoinThread(&udpPingThread);
+            pingThreadStarted=false;
         }
 
         closeSocket(rtpSocket);
@@ -278,7 +279,7 @@ static void AudioReceiveThreadProc(void* context) {
             bufferPacket.len=MAX_PACKET_SIZE;
             bufferPacket.buf=&packet->data[0];
             proxyReceiveCallback(&bufferPacket,SocketChannelAudio);
-            if (bufferPacket.len==0) {
+            if (bufferPacket.len<=0) {
                 Limelog("从代理接收音频数据失败\n", (int)LastSocketError());
                 ListenerCallbacks.connectionTerminated(LastSocketFail());
                 break;

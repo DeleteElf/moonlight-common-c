@@ -1482,7 +1482,7 @@ int stopControlStream(void) {
         shutdownTcpSocket(ctlSock);
     }
 
-    if (proxyChannelStopCallback == NULL) { //这个线程与enet深度耦合，暂时抛弃
+    if (proxyReceiveCallback == NULL) { //这个线程与enet深度耦合，暂时抛弃
         PltInterruptThread(&controlReceiveThread);
         PltJoinThread(&controlReceiveThread);
     }
