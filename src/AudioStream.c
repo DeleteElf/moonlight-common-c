@@ -131,13 +131,12 @@ static void freePacketList(PLINKED_BLOCKING_QUEUE_ENTRY entry) {
 
 // Tear down the audio stream once we're done with it
 void destroyAudioStream(void) {
+    if (pingThreadStarted) {
+        PltInterruptThread(&udpPingThread);
+        PltJoinThread(&udpPingThread);
+        pingThreadStarted=false;
+    }
     if (rtpSocket != INVALID_SOCKET) {
-        if (pingThreadStarted) {
-            PltInterruptThread(&udpPingThread);
-            PltJoinThread(&udpPingThread);
-            pingThreadStarted=false;
-        }
-
         closeSocket(rtpSocket);
         rtpSocket = INVALID_SOCKET;
     }
