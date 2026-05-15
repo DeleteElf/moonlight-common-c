@@ -1466,8 +1466,11 @@ static void requestIdrFrameFunc(void* context) {
 int stopControlStream(void) {
     stopping = true;
     if (proxyChannelStopCallback != NULL) {
-        proxyChannelStopCallback(SocketChannelControl);
+        int ret=proxyChannelStopCallback(SocketChannelControl);
         // return 0; //不再直接返回，仍要执行注销 线程逻辑
+        if(ret>0){
+            //考虑打印错误
+        }
     }
 
     LbqSignalQueueShutdown(&invalidReferenceFrameTuples);
@@ -1582,9 +1585,12 @@ uint32_t LiGetConnectData(){
 // Starts the control stream
 int startControlStream(void) {
     if(proxyChannelStartCallback!=NULL){
-        proxyChannelStartCallback(SocketChannelControl);
-        // return 0;
-        goto event_handler; //修复代理模式下 事件没有工作的问题,以下代码到跳跃点与enet深度耦合
+        int ret=proxyChannelStartCallback(SocketChannelControl);
+        if(ret==0) {
+            goto event_handler; //修复代理模式下 事件没有工作的问题,以下代码到跳跃点与enet深度耦合
+        }else{
+            return ret;
+        }
     }
 
     int err;

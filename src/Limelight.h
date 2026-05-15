@@ -994,7 +994,7 @@ typedef struct _BufferPacket{
 typedef int (*ProxySendCallback)(const void*,int,int,int);
 // BufferPacket* buffer,channelId
 typedef int (*ProxyReceiveCallback)(BufferPacket*,int);
-typedef void (*ProxyChannelCallback)(int);
+typedef int (*ProxyChannelCallback)(int);
 
 typedef enum _SocketChannelType
 {
@@ -1013,7 +1013,6 @@ void LiSetProxyReceive(ProxyReceiveCallback callback);
 void LiSetProxyChannelStop(ProxyChannelCallback callback);
 void LiSetProxyChannelStart(ProxyChannelCallback callback);
 // #endif
-
 
 // rtsp http protocol support
 typedef int (*HttpRtspMessageCallback)(char*,BufferPacket*,BufferPacket*);
