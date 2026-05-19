@@ -1585,7 +1585,7 @@ uint32_t LiGetConnectData(){
 // Starts the control stream
 int startControlStream(void) {
     if(proxyChannelStartCallback!=NULL){
-        int ret=proxyChannelStartCallback(SocketChannelControl);
+        int ret=proxyChannelStartCallback(SocketChannelControl,ControlPortNumber);
         if(ret==0) {
             goto event_handler; //修复代理模式下 事件没有工作的问题,以下代码到跳跃点与enet深度耦合
         }else{

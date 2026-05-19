@@ -40,8 +40,8 @@ uint32_t EncryptionFeaturesEnabled;
 
 ProxySendCallback proxySendCallback;
 ProxyReceiveCallback proxyReceiveCallback;
-ProxyChannelCallback proxyChannelStopCallback;
-ProxyChannelCallback proxyChannelStartCallback;
+ProxyStopCallback proxyChannelStopCallback;
+ProxyStartCallback proxyChannelStartCallback;
 void LiSetProxySend(ProxySendCallback callback){
     proxySendCallback=callback;
 }
@@ -50,11 +50,11 @@ void LiSetProxyReceive(ProxyReceiveCallback callback){
     proxyReceiveCallback=callback;
 }
 
-void LiSetProxyChannelStop(ProxyChannelCallback callback){
+void LiSetProxyChannelStop(ProxyStopCallback callback){
     proxyChannelStopCallback=callback;
 }
 
-void LiSetProxyChannelStart(ProxyChannelCallback callback){
+void LiSetProxyChannelStart(ProxyStartCallback callback){
     proxyChannelStartCallback=callback;
 }
 

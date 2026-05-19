@@ -147,7 +147,7 @@ static void VideoReceiveThreadProc(void* context) {
             bufferPacket.buf=buffer;
             proxyReceiveCallback(&bufferPacket,SocketChannelVideo);
             if (bufferPacket.len<=0) {
-                Limelog("从代理接收视频数据失败\n", (int)LastSocketError());
+                Limelog("接收视频数据失败\n", (int)LastSocketError());
                 ListenerCallbacks.connectionTerminated(-1);
                 break;
             }

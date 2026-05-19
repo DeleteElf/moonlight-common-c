@@ -279,7 +279,7 @@ static void AudioReceiveThreadProc(void* context) {
             bufferPacket.buf=&packet->data[0];
             proxyReceiveCallback(&bufferPacket,SocketChannelAudio);
             if (bufferPacket.len<=0) {
-                Limelog("从代理接收音频数据失败\n", (int)LastSocketError());
+                Limelog("接收音频数据失败\n", (int)LastSocketError());
                 ListenerCallbacks.connectionTerminated(LastSocketFail());
                 break;
             }
