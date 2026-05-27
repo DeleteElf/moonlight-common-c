@@ -1343,6 +1343,92 @@ int startControlStream(void) {
             return ret;
         }
     }
+//    if(false){ //耦合太深，没有升级的逻辑
+//        int err = PltCreateThread("ControlRecv", controlReceiveThreadFunc, NULL, &controlReceiveThread);
+//        if (err != 0) {
+//            stopping = true;
+//            if (ctlSock != INVALID_SOCKET) {
+//                closeSocket(ctlSock);
+//                ctlSock = INVALID_SOCKET;
+//            }
+//            else {
+//                enet_peer_disconnect_now(peer, 0);
+//                peer = NULL;
+//                enet_host_destroy(client);
+//                client = NULL;
+//            }
+//            return err;
+//        }
+//
+//        // Send START A
+//        if (!sendMessageAndDiscardReply(packetTypes[IDX_START_A],
+//                                        payloadLengths[IDX_START_A],
+//                                        preconstructedPayloads[IDX_START_A],
+//                                        CTRL_CHANNEL_GENERIC,
+//                                        ENET_PACKET_FLAG_RELIABLE,
+//                                        false)) {
+//            Limelog("Start A failed: %d\n", (int)LastSocketError());
+//            err = LastSocketFail();
+//            stopping = true;
+//
+//            if (ctlSock != INVALID_SOCKET) {
+//                shutdownTcpSocket(ctlSock);
+//            }
+//            else {
+//                ConnectionInterrupted = true;
+//            }
+//
+//            PltInterruptThread(&controlReceiveThread);
+//            PltJoinThread(&controlReceiveThread);
+//
+//            if (ctlSock != INVALID_SOCKET) {
+//                closeSocket(ctlSock);
+//                ctlSock = INVALID_SOCKET;
+//            }
+//            else {
+//                enet_peer_disconnect_now(peer, 0);
+//                peer = NULL;
+//                enet_host_destroy(client);
+//                client = NULL;
+//            }
+//            return err;
+//        }
+//
+//        // Send START B
+//        if (!sendMessageAndDiscardReply(packetTypes[IDX_START_B],
+//                                        payloadLengths[IDX_START_B],
+//                                        preconstructedPayloads[IDX_START_B],
+//                                        CTRL_CHANNEL_GENERIC,
+//                                        ENET_PACKET_FLAG_RELIABLE,
+//                                        false)) {
+//            Limelog("Start B failed: %d\n", (int)LastSocketError());
+//            err = LastSocketFail();
+//            stopping = true;
+//
+//            if (ctlSock != INVALID_SOCKET) {
+//                shutdownTcpSocket(ctlSock);
+//            }
+//            else {
+//                ConnectionInterrupted = true;
+//            }
+//
+//            PltInterruptThread(&controlReceiveThread);
+//            PltJoinThread(&controlReceiveThread);
+//
+//            if (ctlSock != INVALID_SOCKET) {
+//                closeSocket(ctlSock);
+//                ctlSock = INVALID_SOCKET;
+//            }
+//            else {
+//                enet_peer_disconnect_now(peer, 0);
+//                peer = NULL;
+//                enet_host_destroy(client);
+//                client = NULL;
+//            }
+//            return err;
+//        }
+//    }
+
     int err = PltCreateThread("LossStats", lossStatsThreadFunc, NULL, &lossStatsThread);
     if (err != 0) {
         stopping = true;
