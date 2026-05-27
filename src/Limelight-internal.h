@@ -11,8 +11,6 @@
 #include "RtpVideoQueue.h"
 #include "ByteBuffer.h"
 
-#include <enet/enet.h>
-
 // Common globals
 extern char* RemoteAddrString;
 extern struct sockaddr_storage RemoteAddr;
@@ -100,8 +98,6 @@ extern uint32_t EncryptionFeaturesEnabled;
 // Internal macro for checking the magic byte of the audio configuration value
 #define MAGIC_BYTE_FROM_AUDIO_CONFIG(x) ((x) & 0xFF)
 
-int serviceEnetHost(ENetHost* client, ENetEvent* event, enet_uint32 timeoutMs);
-int gracefullyDisconnectEnetPeer(ENetHost* host, ENetPeer* peer, enet_uint32 lingerTimeoutMs);
 int extractVersionQuadFromString(const char* string, int* quad);
 bool isReferenceFrameInvalidationSupportedByDecoder(void);
 bool isReferenceFrameInvalidationEnabled(void);
@@ -123,9 +119,7 @@ void connectionDetectedFrameLoss(int trackIndex, uint32_t startFrame, uint32_t e
 void connectionReceivedCompleteFrame(int trackIndex,uint32_t frameIndex);
 void connectionSawFrame(PRTP_VIDEO_QUEUE queue);
 void connectionSendFrameFecStatus(PSS_FRAME_FEC_STATUS fecStatus);
-int sendInputPacketOnControlStream(unsigned char* data, int length, uint8_t channelId, uint32_t flags, bool moreData);
-void flushInputOnControlStream(void);
-bool isControlDataInTransit(void);
+int sendInputPacketOnControlStream(unsigned char* data, int length);
 
 int performRtspHandshake(PSERVER_INFORMATION serverInfo);
 //初始化解包器

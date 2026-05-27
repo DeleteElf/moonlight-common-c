@@ -478,12 +478,6 @@ int initializePlatform(void) {
     if (err != 0) {
         return err;
     }
-
-    err = enet_initialize();
-    if (err != 0) {
-        return err;
-    }
-
     enterLowLatencyMode();
 
     return 0;
@@ -493,8 +487,6 @@ void cleanupPlatform(void) {
     exitLowLatencyMode();
 
     cleanupPlatformSockets();
-
-    enet_deinitialize();
 
     LC_ASSERT(activeThreads == 0);
     LC_ASSERT(activeMutexes == 0);
