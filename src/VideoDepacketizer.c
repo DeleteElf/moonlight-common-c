@@ -1,4 +1,5 @@
 #include "Limelight-internal.h"
+// #include <stdatomic.h> //这个需要C11...
 
 #define DR_CLEANUP -1000
 
@@ -46,6 +47,7 @@ typedef struct _BUFFER_DESC {
 
 typedef struct _LENTRY_INTERNAL {
     LENTRY entry;
+    // atomic_uintptr_t allocPtr;
     void* allocPtr;
 } LENTRY_INTERNAL, *PLENTRY_INTERNAL;
 
@@ -63,6 +65,23 @@ typedef struct _LENTRY_INTERNAL {
 #define HEVC_NAL_TYPE_AUD 35
 #define HEVC_NAL_TYPE_FILLER 38
 #define HEVC_NAL_TYPE_SEI 39
+
+static PLT_MUTEX entryMutex;
+void safeFreePtr(PLENTRY_INTERNAL entry) {
+    PltLockMutex(&entryMutex);
+     if(entry->allocPtr!=NULL) {
+         void *ptr = entry->allocPtr;
+         entry->allocPtr = NULL;
+         free(ptr);
+     }
+    PltUnlockMutex(&entryMutex);
+    //利用 atomic_exchange 原子性地把指针换成 NULL，谁拿到了原地址，谁就负责 free，绝对不会重复。
+    //但是这个需要C11支持，在使用C11之前，我们用锁来解决
+    // void *oldPtr =(void*) atomic_exchange(&(entry->allocPtr), (uintptr_t)NULL);
+    // if (oldPtr != NULL) {
+    //     free(oldPtr); // 只有一个线程能拿到非空指针并执行 free
+    // }
+}
 
 static PVIDEO_DEPACKETIZERS depacketizers;
 // Init
@@ -111,7 +130,8 @@ static void cleanupFrameState(PVIDEO_DEPACKETIZER depacketizer) {
     while (depacketizer->nalChainHead!=NULL) {
         lastEntry = (PLENTRY_INTERNAL) depacketizer->nalChainHead;
         depacketizer->nalChainHead = lastEntry->entry.next;
-        free(lastEntry->allocPtr);
+        safeFreePtr(lastEntry);
+        //free(lastEntry->allocPtr);
     }
     depacketizer->nalChainTail = NULL;
     depacketizer->nalChainDataLength = 0;
@@ -319,7 +339,8 @@ void LiCompleteVideoFrame(VIDEO_FRAME_HANDLE handle, int drStatus,int trackIndex
     while (qdu->decodeUnit.bufferList != NULL) {
         lastEntry = (PLENTRY_INTERNAL)qdu->decodeUnit.bufferList;
         qdu->decodeUnit.bufferList = lastEntry->entry.next;
-        free(lastEntry->allocPtr);
+        safeFreePtr(lastEntry);
+//        free(lastEntry->allocPtr);
     }
 
     // We will have stack-allocated entries iff we have a direct-submit decoder
@@ -1205,7 +1226,8 @@ void queueRtpPacket(int trackIndex,PRTPV_QUEUE_ENTRY queueEntryPtr) {
 
     if (existingEntry != NULL) {
         // processRtpPayload didn't want this packet, so just free it
-        free(existingEntry->allocPtr);
+        safeFreePtr(existingEntry);
+//      free(existingEntry->allocPtr);
     }
 }
 
