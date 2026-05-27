@@ -113,8 +113,10 @@ static void cleanupFrameState(PVIDEO_DEPACKETIZER depacketizer) {
         lastEntry = (PLENTRY_INTERNAL)depacketizer->nalChainHead;
         if(lastEntry){
             depacketizer->nalChainHead = lastEntry->entry.next;//最后一个实体的下一个
-            if(lastEntry->allocPtr)
-              free(lastEntry->allocPtr);
+            if(lastEntry->allocPtr){
+                free(lastEntry->allocPtr);
+                lastEntry->allocPtr=NULL;
+            }
         }
     }
     depacketizer->nalChainTail = NULL;
@@ -324,6 +326,7 @@ void LiCompleteVideoFrame(VIDEO_FRAME_HANDLE handle, int drStatus,int trackIndex
         lastEntry = (PLENTRY_INTERNAL)qdu->decodeUnit.bufferList;
         qdu->decodeUnit.bufferList = lastEntry->entry.next;
         free(lastEntry->allocPtr);
+        lastEntry->allocPtr=NULL;
     }
 
     // We will have stack-allocated entries iff we have a direct-submit decoder
@@ -1210,6 +1213,7 @@ void queueRtpPacket(int trackIndex,PRTPV_QUEUE_ENTRY queueEntryPtr) {
     if (existingEntry != NULL) {
         // processRtpPayload didn't want this packet, so just free it
         free(existingEntry->allocPtr);
+        existingEntry->allocPtr=NULL;
     }
 }
 
