@@ -87,15 +87,15 @@ static void VideoPingThreadProc(void* context) {
         if (VideoPingPayload.payload[0] != 0) {
             pingCount++;
             VideoPingPayload.sequenceNumber = BE32(pingCount);
-            if(proxySendCallback!=NULL){
-                proxySendCallback((char *) &VideoPingPayload,sizeof(VideoPingPayload),SocketChannelVideo,-1);
+            if(networkSendCallback!=NULL){
+                networkSendCallback((char *) &VideoPingPayload,sizeof(VideoPingPayload),SocketChannelVideo,-1);
             }else {
                 sendto(rtpSocket, (char*)&VideoPingPayload, sizeof(VideoPingPayload), 0, (struct sockaddr*)&saddr, AddrLen);
             }
         }
         else {
-            if(proxySendCallback!=NULL){
-                proxySendCallback(legacyPingData, sizeof(legacyPingData),SocketChannelVideo,-1);
+            if(networkSendCallback!=NULL){
+                networkSendCallback(legacyPingData, sizeof(legacyPingData),SocketChannelVideo,-1);
             }else {
                 sendto(rtpSocket, legacyPingData, sizeof(legacyPingData), 0, (struct sockaddr*)&saddr, AddrLen);
             }
@@ -141,11 +141,11 @@ static void VideoReceiveThreadProc(void* context) {
         }
         PRTP_PACKET packet;
         int length=0;
-        if(proxyReceiveCallback!=NULL){
+        if(networkReceiveCallback!=NULL){
             BufferPacket bufferPacket;
             bufferPacket.len=receiveSize;
             bufferPacket.buf=buffer;
-            proxyReceiveCallback(&bufferPacket,SocketChannelVideo);
+            networkReceiveCallback(&bufferPacket,SocketChannelVideo);
             if (bufferPacket.len<=0) {
                 Limelog("接收视频数据失败\n", (int)LastSocketError());
                 ListenerCallbacks.connectionTerminated(-1);

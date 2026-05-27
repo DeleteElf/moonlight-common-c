@@ -53,15 +53,15 @@ static void AudioPingThreadProc(void* context) {
         if (AudioPingPayload.payload[0] != 0) {
             pingCount++;
             AudioPingPayload.sequenceNumber = BE32(pingCount);
-            if(proxySendCallback!=NULL){
-                proxySendCallback((char*) &AudioPingPayload,sizeof(AudioPingPayload),SocketChannelAudio,-1);
+            if(networkSendCallback!=NULL){
+                networkSendCallback((char*) &AudioPingPayload,sizeof(AudioPingPayload),SocketChannelAudio,-1);
             }else {
                 sendto(rtpSocket,(char*)&AudioPingPayload,sizeof(AudioPingPayload), 0, (struct sockaddr*) &saddr, AddrLen);
             }
         }
         else {
-            if(proxySendCallback!=NULL){
-                proxySendCallback(legacyPingData, sizeof(legacyPingData),SocketChannelAudio,-1);
+            if(networkSendCallback!=NULL){
+                networkSendCallback(legacyPingData, sizeof(legacyPingData),SocketChannelAudio,-1);
             }else {
                 sendto(rtpSocket, legacyPingData, sizeof(legacyPingData), 0, (struct sockaddr *) &saddr, AddrLen);
             }
@@ -273,11 +273,11 @@ static void AudioReceiveThreadProc(void* context) {
                 break;
             }
         }
-        if(proxyReceiveCallback!=NULL){
+        if(networkReceiveCallback!=NULL){
             BufferPacket bufferPacket;
             bufferPacket.len=MAX_PACKET_SIZE;
             bufferPacket.buf=&packet->data[0];
-            proxyReceiveCallback(&bufferPacket,SocketChannelAudio);
+            networkReceiveCallback(&bufferPacket,SocketChannelAudio);
             if (bufferPacket.len<=0) {
                 Limelog("接收音频数据失败\n", (int)LastSocketError());
                 ListenerCallbacks.connectionTerminated(LastSocketFail());
@@ -513,8 +513,8 @@ int LiSendAudioStreamEvent(const char* data, unsigned int length,unsigned  int p
     memcpy(buffer,&packet,size);
     memcpy(buffer+size,data,length);
 
-    if(proxySendCallback!=NULL){
-        proxySendCallback(buffer,size+length,SocketChannelAudio,-1);
+    if(networkSendCallback!=NULL){
+        networkSendCallback(buffer,size+length,SocketChannelAudio,-1);
         return 0;
     }
 

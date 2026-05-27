@@ -991,11 +991,11 @@ typedef struct _BufferPacket{
 // proxy support
 // return int value,in send is error code,in receive is receive length!
 // byte data,length,channelId,dataType(-1 is invalid)
-typedef int (*ProxySendCallback)(const void*,int,int,int);
+typedef int (*NetworkSendCallback)(const void*,int,int,int);
 // BufferPacket* buffer,channelId
-typedef int (*ProxyReceiveCallback)(BufferPacket*,int);
-typedef int (*ProxyStartCallback)(int,int);
-typedef int (*ProxyStopCallback)(int);
+typedef int (*NetworkReceiveCallback)(BufferPacket*,int);
+typedef int (*NetworkStartCallback)(int,int);
+typedef int (*NetworkStopCallback)(int);
 
 typedef enum _SocketChannelType
 {
@@ -1004,15 +1004,16 @@ typedef enum _SocketChannelType
     SocketChannelVideo
 } SocketChannelType;
 
-extern ProxySendCallback proxySendCallback;
-extern ProxyReceiveCallback proxyReceiveCallback;
-extern ProxyStopCallback proxyChannelStopCallback;
-extern ProxyStartCallback proxyChannelStartCallback;
+extern NetworkStartCallback networkChannelStartCallback;
+extern NetworkStopCallback networkChannelStopCallback;
+extern NetworkSendCallback networkSendCallback;
+extern NetworkReceiveCallback networkReceiveCallback;
 
-void LiSetProxySend(ProxySendCallback callback);
-void LiSetProxyReceive(ProxyReceiveCallback callback);
-void LiSetProxyChannelStop(ProxyStopCallback callback);
-void LiSetProxyChannelStart(ProxyStartCallback callback);
+void LiSetNetworkChannelStart(NetworkStartCallback callback);
+void LiSetNetworkChannelStop(NetworkStopCallback callback);
+void LiSetNetworkSend(NetworkSendCallback callback);
+void LiSetNetworkReceive(NetworkReceiveCallback callback);
+
 // #endif
 
 // rtsp http protocol support

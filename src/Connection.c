@@ -38,24 +38,24 @@ uint32_t EncryptionFeaturesSupported;
 uint32_t EncryptionFeaturesRequested;
 uint32_t EncryptionFeaturesEnabled;
 
-ProxySendCallback proxySendCallback;
-ProxyReceiveCallback proxyReceiveCallback;
-ProxyStopCallback proxyChannelStopCallback;
-ProxyStartCallback proxyChannelStartCallback;
-void LiSetProxySend(ProxySendCallback callback){
-    proxySendCallback=callback;
+NetworkSendCallback networkSendCallback;
+NetworkReceiveCallback networkReceiveCallback;
+NetworkStopCallback networkChannelStopCallback;
+NetworkStartCallback networkChannelStartCallback;
+void LiSetNetworkSend(NetworkSendCallback callback){
+    networkSendCallback=callback;
 }
 
-void LiSetProxyReceive(ProxyReceiveCallback callback){
-    proxyReceiveCallback=callback;
+void LiSetNetworkReceive(NetworkReceiveCallback callback){
+    networkReceiveCallback=callback;
 }
 
-void LiSetProxyChannelStop(ProxyStopCallback callback){
-    proxyChannelStopCallback=callback;
+void LiSetNetworkChannelStop(NetworkStopCallback callback){
+    networkChannelStopCallback=callback;
 }
 
-void LiSetProxyChannelStart(ProxyStartCallback callback){
-    proxyChannelStartCallback=callback;
+void LiSetNetworkChannelStart(NetworkStartCallback callback){
+    networkChannelStartCallback=callback;
 }
 
 HttpRtspMessageCallback httpRtspMessageCallback;

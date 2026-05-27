@@ -718,8 +718,8 @@ static bool sendMessageTcp(short ptype, short paylen, const void* payload) {
 }
 
 static bool sendMessageAndForget(short ptype, short paylen, const void* payload, uint8_t channelId, uint32_t flags, bool moreData) {
-    if (proxySendCallback != NULL) {
-        proxySendCallback(payload, paylen, SocketChannelControl, ptype);
+    if (networkSendCallback != NULL) {
+        networkSendCallback(payload, paylen, SocketChannelControl, ptype);
         return true;
     } else {
         return sendMessageEnet(ptype, paylen, payload, channelId, flags, moreData);
@@ -727,8 +727,8 @@ static bool sendMessageAndForget(short ptype, short paylen, const void* payload,
 }
 
 static bool sendMessageAndDiscardReply(short ptype, short paylen, const void* payload, uint8_t channelId, uint32_t flags, bool moreData) {
-    if(proxySendCallback!=NULL){
-        proxySendCallback(payload,paylen,SocketChannelControl,ptype);
+    if(networkSendCallback!=NULL){
+        networkSendCallback(payload,paylen,SocketChannelControl,ptype);
         return true ;
     }
     if (!sendMessageEnet(ptype, paylen, payload, channelId, flags, moreData)) {
@@ -1465,8 +1465,8 @@ static void requestIdrFrameFunc(void* context) {
 // Stops the control stream
 int stopControlStream(void) {
     stopping = true;
-    if (proxyChannelStopCallback != NULL) {
-        int ret=proxyChannelStopCallback(SocketChannelControl);
+    if (networkChannelStopCallback != NULL) {
+        int ret=networkChannelStopCallback(SocketChannelControl);
         // return 0; //不再直接返回，仍要执行注销 线程逻辑
         if(ret>0){
             //考虑打印错误
@@ -1485,7 +1485,7 @@ int stopControlStream(void) {
         shutdownTcpSocket(ctlSock);
     }
 
-    if (proxyReceiveCallback == NULL) { //这个线程与enet深度耦合，暂时抛弃
+    if (networkReceiveCallback == NULL) { //这个线程与enet深度耦合，暂时抛弃
         PltInterruptThread(&controlReceiveThread);
         PltJoinThread(&controlReceiveThread);
     }
@@ -1537,7 +1537,7 @@ int sendInputPacketOnControlStream(unsigned char* data, int length, uint8_t chan
 
 // Called by the input stream to flush queued packets before a batching wait
 void flushInputOnControlStream(void) {
-  if(proxySendCallback==NULL){//优化升级，当使用代理时，不再需要flush
+  if(networkSendCallback==NULL){//优化升级，当使用代理时，不再需要flush
       PltLockMutex(&enetMutex);
       enet_host_flush(client);
       PltUnlockMutex(&enetMutex);
@@ -1584,8 +1584,8 @@ uint32_t LiGetConnectData(){
 
 // Starts the control stream
 int startControlStream(void) {
-    if(proxyChannelStartCallback!=NULL){
-        int ret=proxyChannelStartCallback(SocketChannelControl,ControlPortNumber);
+    if(networkChannelStartCallback!=NULL){
+        int ret=networkChannelStartCallback(SocketChannelControl,ControlPortNumber);
         if(ret==0) {
             goto event_handler; //修复代理模式下 事件没有工作的问题,以下代码到跳跃点与enet深度耦合
         }else{
