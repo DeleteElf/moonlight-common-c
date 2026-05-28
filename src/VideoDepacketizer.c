@@ -69,11 +69,11 @@ typedef struct _LENTRY_INTERNAL {
 static PLT_MUTEX entryMutex;
 void safeFreePtr(PLENTRY_INTERNAL entry) {
     PltLockMutex(&entryMutex);
-     if(entry->allocPtr!=NULL) {
-         void *ptr = entry->allocPtr;
-         entry->allocPtr = NULL;
-         free(ptr);
-     }
+    if (entry->allocPtr) {
+        void *ptr = entry->allocPtr;
+        entry->allocPtr = NULL;
+        free(ptr);
+    }
     PltUnlockMutex(&entryMutex);
     //利用 atomic_exchange 原子性地把指针换成 NULL，谁拿到了原地址，谁就负责 free，绝对不会重复。
     //但是这个需要C11支持，在使用C11之前，我们用锁来解决
@@ -127,7 +127,7 @@ void initializeVideoDepacketizer(int pktSize,int trackCount) {
 // Free the NAL chain
 static void cleanupFrameState(PVIDEO_DEPACKETIZER depacketizer) {
     PLENTRY_INTERNAL lastEntry;
-    while (depacketizer->nalChainHead!=NULL) {
+    while (depacketizer->nalChainHead) {
         lastEntry = (PLENTRY_INTERNAL) depacketizer->nalChainHead;
         depacketizer->nalChainHead = lastEntry->entry.next;
         safeFreePtr(lastEntry);
