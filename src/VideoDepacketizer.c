@@ -67,21 +67,6 @@ typedef struct _LENTRY_INTERNAL {
 #define HEVC_NAL_TYPE_SEI 39
 
 static PLT_MUTEX entryMutex;
-void safeFreePtr(PLENTRY_INTERNAL entry) {
-    PltLockMutex(&entryMutex);
-    if (entry->allocPtr) {
-        void *ptr = entry->allocPtr;
-        entry->allocPtr = NULL;
-        free(ptr);
-    }
-    PltUnlockMutex(&entryMutex);
-    //利用 atomic_exchange 原子性地把指针换成 NULL，谁拿到了原地址，谁就负责 free，绝对不会重复。
-    //但是这个需要C11支持，在使用C11之前，我们用锁来解决
-    // void *oldPtr =(void*) atomic_exchange(&(entry->allocPtr), (uintptr_t)NULL);
-    // if (oldPtr != NULL) {
-    //     free(oldPtr); // 只有一个线程能拿到非空指针并执行 free
-    // }
-}
 
 static PVIDEO_DEPACKETIZERS depacketizers;
 // Init
@@ -126,15 +111,16 @@ void initializeVideoDepacketizer(int pktSize,int trackCount) {
 
 // Free the NAL chain
 static void cleanupFrameState(PVIDEO_DEPACKETIZER depacketizer) {
+    PltLockMutex(&entryMutex);
     PLENTRY_INTERNAL lastEntry;
     while (depacketizer->nalChainHead) {
         lastEntry = (PLENTRY_INTERNAL) depacketizer->nalChainHead;
         depacketizer->nalChainHead = lastEntry->entry.next;
-        safeFreePtr(lastEntry);
-        //free(lastEntry->allocPtr);
+        free(lastEntry->allocPtr);
     }
     depacketizer->nalChainTail = NULL;
     depacketizer->nalChainDataLength = 0;
+    PltUnlockMutex(&entryMutex);
 }
 
 // Cleanup frame state and set that we're waiting for an IDR Frame
@@ -339,8 +325,7 @@ void LiCompleteVideoFrame(VIDEO_FRAME_HANDLE handle, int drStatus,int trackIndex
     while (qdu->decodeUnit.bufferList != NULL) {
         lastEntry = (PLENTRY_INTERNAL)qdu->decodeUnit.bufferList;
         qdu->decodeUnit.bufferList = lastEntry->entry.next;
-        safeFreePtr(lastEntry);
-//        free(lastEntry->allocPtr);
+        free(lastEntry->allocPtr);
     }
 
     // We will have stack-allocated entries iff we have a direct-submit decoder
@@ -659,7 +644,9 @@ static void queueFragment(PVIDEO_DEPACKETIZER depacketizer, PLENTRY_INTERNAL* ex
         // If we had to allocate a new entry, we must copy the data. If not,
         // the data already resides within the LENTRY allocation.
         if (existingEntry == NULL || *existingEntry == NULL) {
+            PltLockMutex(&entryMutex);
             entry->allocPtr = entry;
+            PltUnlockMutex(&entryMutex);
             entry->entry.ssrc=ssrc;
             entry->entry.data = (char*)(entry + 1);
             memcpy(entry->entry.data, &data[offset], entry->entry.length);
@@ -677,7 +664,7 @@ static void queueFragment(PVIDEO_DEPACKETIZER depacketizer, PLENTRY_INTERNAL* ex
         entry->entry.bufferType = getBufferFlags(entry->entry.data, entry->entry.length);
 
         depacketizer->nalChainDataLength += entry->entry.length;
-
+        PltLockMutex(&entryMutex);
         if (depacketizer->nalChainTail == NULL) {
             LC_ASSERT(depacketizer->nalChainHead == NULL);
             depacketizer->nalChainHead = depacketizer->nalChainTail = (PLENTRY)entry;
@@ -687,6 +674,7 @@ static void queueFragment(PVIDEO_DEPACKETIZER depacketizer, PLENTRY_INTERNAL* ex
             depacketizer->nalChainTail->next = (PLENTRY)entry;
             depacketizer->nalChainTail = depacketizer->nalChainTail->next;
         }
+        PltUnlockMutex(&entryMutex);
     }
 }
 
@@ -1226,8 +1214,7 @@ void queueRtpPacket(int trackIndex,PRTPV_QUEUE_ENTRY queueEntryPtr) {
 
     if (existingEntry != NULL) {
         // processRtpPayload didn't want this packet, so just free it
-        safeFreePtr(existingEntry);
-//      free(existingEntry->allocPtr);
+      free(existingEntry->allocPtr);
     }
 }
 
