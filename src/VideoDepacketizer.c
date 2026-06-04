@@ -118,6 +118,7 @@ static void cleanupFrameState(PVIDEO_DEPACKETIZER depacketizer) {
         depacketizer->nalChainHead = lastEntry->entry.next;
         free(lastEntry->allocPtr);
     }
+    depacketizer->nalChainHead =NULL;
     depacketizer->nalChainTail = NULL;
     depacketizer->nalChainDataLength = 0;
     PltUnlockMutex(&entryMutex);
@@ -172,6 +173,7 @@ void stopVideoDepacketizer(void) {
     int size=depacketizers->trackCount;
     for (int i = 0; i < size; ++i) {
         LbqSignalQueueShutdown(&depacketizers->data[i].decodeUnitQueue);
+        Limelog("解码器[%d]已经关闭\n",i);
     }
 }
 
@@ -491,7 +493,7 @@ static bool isIdrFrameStart(PBUFFER_DESC buffer) {
     }
 }
 
-// Reassemble the frame with the given frame number
+// 根据给定的框架编号重新组装框架
 static void reassembleFrame(PVIDEO_DEPACKETIZER depacketizer,int frameNumber) {
     if (depacketizer->nalChainHead != NULL) {
         QUEUED_DECODE_UNIT qduDS;
@@ -506,6 +508,7 @@ static void reassembleFrame(PVIDEO_DEPACKETIZER depacketizer,int frameNumber) {
         }
 
         if (qdu != NULL) {
+            PltLockMutex(&entryMutex);
             qdu->decodeUnit.bufferList = depacketizer->nalChainHead;
             qdu->decodeUnit.fullLength = depacketizer->nalChainDataLength;
             qdu->decodeUnit.frameType = depacketizer->frameType;
@@ -571,6 +574,7 @@ static void reassembleFrame(PVIDEO_DEPACKETIZER depacketizer,int frameNumber) {
 
             // Move the start of our (potential) RFI window to the next frame
             depacketizer->startFrameNumber = depacketizer->nextFrameNumber;
+            PltUnlockMutex(&entryMutex);
         }
     }
 }
@@ -778,6 +782,11 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
     uint32_t streamPacketIndex;
     uint8_t fecCurrentBlockNumber;
     uint8_t fecLastBlockNumber;
+
+    if(!depacketizer) //解码器都销毁了，不再继续
+      return;
+    if(depacketizer->decodeUnitQueue.shutdown) //解码器都销毁了，不再继续
+      return;
 
     // Mask the top 8 bits from the SPI
     videoPacket->streamPacketIndex >>= 8;

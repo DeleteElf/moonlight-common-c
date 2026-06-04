@@ -255,6 +255,13 @@ void stopVideoStream(void) {
     if (!receivedDataFromPeer) {
         Limelog("No video traffic was ever received from the host!\n");
     }
+    if (networkChannelStopCallback != NULL) {
+        int ret=networkChannelStopCallback(SocketChannelVideo);
+        // return 0; //不再直接返回，仍要执行注销 线程逻辑
+        if(ret>0){
+            //考虑打印错误
+        }
+    }
 
     VideoCallbacks.stop();
 
