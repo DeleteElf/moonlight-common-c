@@ -638,15 +638,14 @@ static void queueFragment(PVIDEO_DEPACKETIZER depacketizer, PLENTRY_INTERNAL* ex
     }
 
     if (entry != NULL) {
+        PltLockMutex(&entryMutex);
         entry->entry.next = NULL;
         entry->entry.length = length;
 
         // If we had to allocate a new entry, we must copy the data. If not,
         // the data already resides within the LENTRY allocation.
         if (existingEntry == NULL || *existingEntry == NULL) {
-            PltLockMutex(&entryMutex);
             entry->allocPtr = entry;
-            PltUnlockMutex(&entryMutex);
             entry->entry.ssrc=ssrc;
             entry->entry.data = (char*)(entry + 1);
             memcpy(entry->entry.data, &data[offset], entry->entry.length);
@@ -664,7 +663,7 @@ static void queueFragment(PVIDEO_DEPACKETIZER depacketizer, PLENTRY_INTERNAL* ex
         entry->entry.bufferType = getBufferFlags(entry->entry.data, entry->entry.length);
 
         depacketizer->nalChainDataLength += entry->entry.length;
-        PltLockMutex(&entryMutex);
+
         if (depacketizer->nalChainTail == NULL) {
             LC_ASSERT(depacketizer->nalChainHead == NULL);
             depacketizer->nalChainHead = depacketizer->nalChainTail = (PLENTRY)entry;
