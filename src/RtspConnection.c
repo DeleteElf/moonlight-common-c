@@ -1048,18 +1048,6 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
             goto Exit;
         }
 
-        // Parse the audio port out of the RTSP SETUP response
-        LC_ASSERT(AudioPortNumber == 0);
-        if (!parseServerPortFromTransport(&response, &AudioPortNumber)) {
-            // Use the well known port if parsing fails
-//            AudioPortNumber = 48000;
-            AudioPortNumber = 48001;
-            Limelog("Audio port: %u (RTSP parsing failed)\n", AudioPortNumber);
-        }
-        else {
-            Limelog("Audio port: %u\n", AudioPortNumber);
-        }
-
         // Parse the Sunshine ping payload protocol extension if present
         memset(&AudioPingPayload, 0, sizeof(AudioPingPayload));
         pingPayload = getOptionContent(response.options, "X-SS-Ping-Payload");
@@ -1121,19 +1109,6 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
         if (pingPayload != NULL && strlen(pingPayload) == sizeof(VideoPingPayload.payload)) {
             memcpy(VideoPingPayload.payload, pingPayload, sizeof(VideoPingPayload.payload));
         }
-
-        // Parse the video port out of the RTSP SETUP response
-        LC_ASSERT(Video1PortNumber == 0);
-        if (!parseServerPortFromTransport(&response, &Video1PortNumber)) {
-            // Use the well known port if parsing fails
-            Video1PortNumber = 48002;
-//            VideoPortNumber = 47998;
-            Limelog("Video port: %u (RTSP parsing failed)\n", Video1PortNumber);
-        }
-        else {
-            Limelog("Video port: %u\n", Video1PortNumber);
-        }
-
         freeMessage(&response);
     }
     //RTSP SETUP CONTROL

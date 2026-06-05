@@ -33,9 +33,6 @@ extern bool ReferenceFrameInvalidationSupported;
 
 extern uint16_t RtspPortNumber;
 extern uint16_t ControlPortNumber;
-extern uint16_t AudioPortNumber;
-extern uint16_t Video1PortNumber;
-extern uint16_t Video2PortNumber;
 
 extern SS_PING AudioPingPayload;
 extern SS_PING VideoPingPayload;

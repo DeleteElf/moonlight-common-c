@@ -37,13 +37,6 @@ typedef struct _QUEUED_AUDIO_PACKET {
 
 static void AudioPingThreadProc(void* context) {
     char legacyPingData[] = { 0x50, 0x49, 0x4E, 0x47 };
-    LC_SOCKADDR saddr;
-
-    LC_ASSERT(AudioPortNumber != 0);
-
-    memcpy(&saddr, &RemoteAddr, sizeof(saddr));
-    SET_PORT(&saddr, AudioPortNumber);
-
     // We do not check for errors here. Socket errors will be handled
     // on the read-side in ReceiveThreadProc(). This avoids potential
     // issues related to receiving ICMP port unreachable messages due
@@ -55,15 +48,11 @@ static void AudioPingThreadProc(void* context) {
             AudioPingPayload.sequenceNumber = BE32(pingCount);
             if(networkSendCallback!=NULL){
                 networkSendCallback((char*) &AudioPingPayload,sizeof(AudioPingPayload),SocketChannelAudio,-1);
-            }else {
-                sendto(rtpSocket,(char*)&AudioPingPayload,sizeof(AudioPingPayload), 0, (struct sockaddr*) &saddr, AddrLen);
             }
         }
         else {
             if(networkSendCallback!=NULL){
                 networkSendCallback(legacyPingData, sizeof(legacyPingData),SocketChannelAudio,-1);
-            }else {
-                sendto(rtpSocket, legacyPingData, sizeof(legacyPingData), 0, (struct sockaddr *) &saddr, AddrLen);
             }
         }
 
@@ -96,7 +85,6 @@ int initializeAudioStream(void) {
 // and will use the well known audio port instead.
 int notifyAudioPortNegotiationComplete(void) {
     LC_ASSERT(!pingThreadStarted);
-    LC_ASSERT(AudioPortNumber != 0);
 
     // For GFE 3.22 compatibility, we must start the audio ping thread before the RTSP handshake.
     // It will not reply to our RTSP PLAY request until the audio ping has been received.
@@ -502,9 +490,6 @@ int LiGetPendingAudioDuration(void) {
 
 int sequenceNumber=0;
 int LiSendAudioStreamEvent(const char* data, unsigned int length,unsigned  int packetType,unsigned int ssrc){
-    LC_SOCKADDR saddr;
-    memcpy(&saddr, &RemoteAddr, sizeof(saddr));
-    SET_PORT(&saddr, AudioPortNumber);
 
     RTP_PACKET packet;
     packet.header= 0x00; // flags (1 byte)
@@ -523,7 +508,5 @@ int LiSendAudioStreamEvent(const char* data, unsigned int length,unsigned  int p
         networkSendCallback(buffer,size+length,SocketChannelAudio,-1);
         return 0;
     }
-
-    sendto(rtpSocket, buffer, size+length, 0, (struct sockaddr*)&saddr, AddrLen);
-    return 0;
+    return -1;
 }

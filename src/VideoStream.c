@@ -67,16 +67,6 @@ void destroyVideoStream() {
 // UDP Ping proc
 static void VideoPingThreadProc(void* context) {
     char legacyPingData[] = { 0x50, 0x49, 0x4E, 0x47 };
-    LC_SOCKADDR saddr;
-
-    // auto threadContext=(thread_context*)context;
-    // int displayIndex=*dIndex;
-    // uint16_t VideoPortNumber=displayIndex==0?Video1PortNumber:Video2PortNumber;
-    uint16_t VideoPortNumber=Video1PortNumber;
-    LC_ASSERT(VideoPortNumber != 0);
-
-    memcpy(&saddr, &RemoteAddr, sizeof(saddr));
-    SET_PORT(&saddr, VideoPortNumber);
 
     // We do not check for errors here. Socket errors will be handled
     // on the read-side in ReceiveThreadProc(). This avoids potential
@@ -89,17 +79,12 @@ static void VideoPingThreadProc(void* context) {
             VideoPingPayload.sequenceNumber = BE32(pingCount);
             if(networkSendCallback!=NULL){
                 networkSendCallback((char *) &VideoPingPayload,sizeof(VideoPingPayload),SocketChannelVideo,-1);
-            }else {
-                sendto(rtpSocket, (char*)&VideoPingPayload, sizeof(VideoPingPayload), 0, (struct sockaddr*)&saddr, AddrLen);
             }
         }
         else {
             if(networkSendCallback!=NULL){
                 networkSendCallback(legacyPingData, sizeof(legacyPingData),SocketChannelVideo,-1);
-            }else {
-                sendto(rtpSocket, legacyPingData, sizeof(legacyPingData), 0, (struct sockaddr*)&saddr, AddrLen);
             }
-
         }
 
         PltSleepMsInterruptible(&udpPingThread, 500);
