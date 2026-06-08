@@ -528,7 +528,7 @@ static void reassembleFrame(PVIDEO_DEPACKETIZER depacketizer,int frameNumber) {
             // Invoke the key frame callback if needed
             if (depacketizer->nalChainHead->bufferType != BUFFER_TYPE_PICDATA || qdu->decodeUnit.frameType == FRAME_TYPE_IDR) {
                 qdu->decodeUnit.frameType = FRAME_TYPE_IDR;
-                notifyKeyFrameReceived();
+                notifyKeyFrameReceived(depacketizer->trackIndex);
             }
             else {
                 qdu->decodeUnit.frameType = FRAME_TYPE_PFRAME;
