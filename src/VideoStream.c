@@ -9,9 +9,6 @@ static PRTP_VIDEO_QUEUE rtpQueues;
 static int rtpQueueCount;
 //static RTP_VIDEO_QUEUE rtpQueue;
 
-static SOCKET rtpSocket = INVALID_SOCKET;
-static SOCKET firstFrameSocket = INVALID_SOCKET;
-
 static PPLT_CRYPTO_CONTEXT decryptionCtx;
 
 static PLT_THREAD udpPingThread;
@@ -96,7 +93,6 @@ static void VideoReceiveThreadProc(void* context) {
     int bufferSize, receiveSize, decryptedSize, minSize;
     char* buffer;
     int queueStatus;
-    bool useSelect;
     int waitingForVideoMs;
 
     decryptedSize = StreamConfig.packetSize + MAX_RTP_HEADER_SIZE;
@@ -104,15 +100,6 @@ static void VideoReceiveThreadProc(void* context) {
     receiveSize = decryptedSize;
     bufferSize = decryptedSize + sizeof(RTPV_QUEUE_ENTRY);
     buffer = NULL;
-
-    if (setNonFatalRecvTimeoutMs(rtpSocket, UDP_RECV_POLL_TIMEOUT_MS) < 0) {
-        // SO_RCVTIMEO failed, so use select() to wait
-        useSelect = true;
-    }
-    else {
-        // SO_RCVTIMEO timeout set for recv()
-        useSelect = false;
-    }
 
     waitingForVideoMs = 0;
     while (!PltIsThreadInterrupted(&receiveThread)) {
@@ -138,7 +125,8 @@ static void VideoReceiveThreadProc(void* context) {
             }
             length=  bufferPacket.len;
         }else {
-            length = recvUdpSocket(rtpSocket,buffer,receiveSize,useSelect);
+            Limelog("未设置有效的networkReceiveCallback");
+            break;
         }
 
         if (length < 0) {
@@ -206,9 +194,10 @@ static void VideoReceiveThreadProc(void* context) {
 
 }
 
-void notifyKeyFrameReceived(void) {
+void notifyKeyFrameReceived(int displayIndex) {
     // Remember that we got a full frame successfully
     receivedFullFrame = true;
+    Limelog("received key frame,trackIndex:%d\n",displayIndex);
 }
 
 // Decoder thread proc
@@ -229,9 +218,6 @@ int readFirstFrame(void) {
     // All that matters is that we close this socket.
     // This starts the flow of video on Gen 3 servers.
 
-    closeSocket(firstFrameSocket);
-    firstFrameSocket = INVALID_SOCKET;
-
     return 0;
 }
 
@@ -239,13 +225,6 @@ int readFirstFrame(void) {
 void stopVideoStream(void) {
     if (!receivedDataFromPeer) {
         Limelog("No video traffic was ever received from the host!\n");
-    }
-    if (networkChannelStopCallback != NULL) {
-        int ret=networkChannelStopCallback(SocketChannelVideo);
-        // return 0; //不再直接返回，仍要执行注销 线程逻辑
-        if(ret>0){
-            //考虑打印错误
-        }
     }
 
     VideoCallbacks.stop();
@@ -258,35 +237,24 @@ void stopVideoStream(void) {
     if ((VideoCallbacks.capabilities & (CAPABILITY_DIRECT_SUBMIT | CAPABILITY_PULL_RENDERER)) == 0) {
         PltInterruptThread(&decoderThread);
     }
-
-    if (firstFrameSocket != INVALID_SOCKET) {
-        shutdownTcpSocket(firstFrameSocket);
+    if (networkChannelStopCallback != NULL) {
+        int ret=networkChannelStopCallback(SocketChannelVideo);
+        // return 0; //不再直接返回，仍要执行注销 线程逻辑
+        if(ret>0){
+            //考虑打印错误
+        }
     }
-
     PltJoinThread(&udpPingThread);
     PltJoinThread(&receiveThread);
     if ((VideoCallbacks.capabilities & (CAPABILITY_DIRECT_SUBMIT | CAPABILITY_PULL_RENDERER)) == 0) {
         PltJoinThread(&decoderThread);
     }
-    
-    if (firstFrameSocket != INVALID_SOCKET) {
-        closeSocket(firstFrameSocket);
-        firstFrameSocket = INVALID_SOCKET;
-    }
-    if (rtpSocket != INVALID_SOCKET) {
-        closeSocket(rtpSocket);
-        rtpSocket = INVALID_SOCKET;
-    }
-
     VideoCallbacks.cleanup();
 }
 
 // Start the video stream
 int startVideoStream(void* rendererContext, int drFlags) {
     int err;
-
-    firstFrameSocket = INVALID_SOCKET;
-
     // This must be called before the decoder thread starts submitting
     // decode units
     LC_ASSERT(NegotiatedVideoFormat != 0);
@@ -296,20 +264,11 @@ int startVideoStream(void* rendererContext, int drFlags) {
         return err;
     }
 
-    rtpSocket = bindUdpSocket(RemoteAddr.ss_family, &LocalAddr, AddrLen,
-                              RTP_RECV_PACKETS_BUFFERED * (StreamConfig.packetSize + MAX_RTP_HEADER_SIZE),
-                              SOCK_QOS_TYPE_VIDEO);
-    if (rtpSocket == INVALID_SOCKET) {
-        VideoCallbacks.cleanup();
-        return LastSocketError();
-    }
-
     VideoCallbacks.start();
 
     err = PltCreateThread("VideoRecv", VideoReceiveThreadProc, NULL, &receiveThread);
     if (err != 0) {
         VideoCallbacks.stop();
-        closeSocket(rtpSocket);
         VideoCallbacks.cleanup();
         return err;
     }
@@ -320,7 +279,6 @@ int startVideoStream(void* rendererContext, int drFlags) {
             VideoCallbacks.stop();
             PltInterruptThread(&receiveThread);
             PltJoinThread(&receiveThread);
-            closeSocket(rtpSocket);
             VideoCallbacks.cleanup();
             return err;
         }
@@ -340,11 +298,6 @@ int startVideoStream(void* rendererContext, int drFlags) {
         PltJoinThread(&receiveThread);
         if ((VideoCallbacks.capabilities & (CAPABILITY_DIRECT_SUBMIT | CAPABILITY_PULL_RENDERER)) == 0) {
             PltJoinThread(&decoderThread);
-        }
-        closeSocket(rtpSocket);
-        if (firstFrameSocket != INVALID_SOCKET) {
-            closeSocket(firstFrameSocket);
-            firstFrameSocket = INVALID_SOCKET;
         }
         VideoCallbacks.cleanup();
         return err;

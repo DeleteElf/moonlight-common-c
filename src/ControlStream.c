@@ -88,7 +88,6 @@ typedef struct _IDR_EVENT{
     bool signal;
 }IDR_EVENT,*P_IDR_EVENT;
 
-static SOCKET ctlSock = INVALID_SOCKET;
 static bool usePeriodicPing;
 
 static PLT_THREAD lossStatsThread;
@@ -374,36 +373,6 @@ void connectionSawFrame(PRTP_VIDEO_QUEUE queue) {
     queue->lastSeenFrame = frameIndex;
 }
 
-// Reads an NV control stream packet from the TCP connection
-static PNVCTL_TCP_PACKET_HEADER readNvctlPacketTcp(void) {
-    NVCTL_TCP_PACKET_HEADER staticHeader;
-    PNVCTL_TCP_PACKET_HEADER fullPacket;
-    SOCK_RET err;
-
-    err = recv(ctlSock, (char*)&staticHeader, sizeof(staticHeader), 0);
-    if (err != sizeof(staticHeader)) {
-        return NULL;
-    }
-
-    staticHeader.type = LE16(staticHeader.type);
-    staticHeader.payloadLength = LE16(staticHeader.payloadLength);
-
-    fullPacket = (PNVCTL_TCP_PACKET_HEADER)malloc(staticHeader.payloadLength + sizeof(staticHeader));
-    if (fullPacket == NULL) {
-        return NULL;
-    }
-
-    memcpy(fullPacket, &staticHeader, sizeof(staticHeader));
-    if (staticHeader.payloadLength != 0) {
-        err = recv(ctlSock, (char*)(fullPacket + 1), staticHeader.payloadLength, 0);
-        if (err != staticHeader.payloadLength) {
-            free(fullPacket);
-            return NULL;
-        }
-    }
-
-    return fullPacket;
-}
 
 static bool encryptControlMessage(PNVCTL_ENCRYPTED_PACKET_HEADER encPacket, PNVCTL_ENET_PACKET_HEADER_V2 packet) {
     unsigned char iv[16] = { 0 };
@@ -518,31 +487,6 @@ static bool decryptControlMessageToV1(PNVCTL_ENCRYPTED_PACKET_HEADER encPacket, 
     // All we need to do is eliminate the new length field in V2 by shifting everything by 2 bytes.
     memmove(((unsigned char*)*packet) + 2, ((unsigned char*)*packet) + 4, plaintextLength - 4);
     *packetLength = plaintextLength - 2;
-
-    return true;
-}
-
-static bool sendMessageTcp(short ptype, short paylen, const void* payload) {
-    PNVCTL_TCP_PACKET_HEADER packet;
-    SOCK_RET err;
-
-    LC_ASSERT(AppVersionQuad[0] < 5);
-
-    packet = malloc(sizeof(*packet) + paylen);
-    if (packet == NULL) {
-        return false;
-    }
-
-    packet->type = LE16(ptype);
-    packet->payloadLength = LE16(paylen);
-    memcpy(&packet[1], payload, paylen);
-
-    err = send(ctlSock, (char*) packet, sizeof(*packet) + paylen, 0);
-    free(packet);
-
-    if (err != (SOCK_RET)(sizeof(*packet) + paylen)) {
-        return false;
-    }
 
     return true;
 }
@@ -1269,10 +1213,6 @@ int stopControlStream(void) {
     // This must be set to stop in a timely manner
     LC_ASSERT(ConnectionInterrupted);
 
-    if (ctlSock != INVALID_SOCKET) {
-        shutdownTcpSocket(ctlSock);
-    }
-
 //    if (networkReceiveCallback == NULL) { //这个线程与enet深度耦合，暂时抛弃
 //        PltInterruptThread(&controlReceiveThread);
 //        PltJoinThread(&controlReceiveThread);
@@ -1290,11 +1230,6 @@ int stopControlStream(void) {
     if (isReferenceFrameInvalidationEnabled()) {
         PltInterruptThread(&invalidateRefFramesThread);
         PltJoinThread(&invalidateRefFramesThread);
-    }
-
-    if (ctlSock != INVALID_SOCKET) {
-        closeSocket(ctlSock);
-        ctlSock = INVALID_SOCKET;
     }
 
     return 0;
@@ -1432,44 +1367,24 @@ int startControlStream(void) {
     int err = PltCreateThread("LossStats", lossStatsThreadFunc, NULL, &lossStatsThread);
     if (err != 0) {
         stopping = true;
-        if (ctlSock != INVALID_SOCKET) {
-            shutdownTcpSocket(ctlSock);
-        }
-        else {
-            ConnectionInterrupted = true;
-        }
+        ConnectionInterrupted = true;
 
         PltInterruptThread(&controlReceiveThread);
         PltJoinThread(&controlReceiveThread);
 
-        if (ctlSock != INVALID_SOCKET) {
-            closeSocket(ctlSock);
-            ctlSock = INVALID_SOCKET;
-        }
         return err;
     }
 
     err = PltCreateThread("ReqIdrFrame", requestIdrFrameFunc, NULL, &requestIdrFrameThread);
     if (err != 0) {
         stopping = true;
-
-        if (ctlSock != INVALID_SOCKET) {
-            shutdownTcpSocket(ctlSock);
-        }
-        else {
-            ConnectionInterrupted = true;
-        }
+        ConnectionInterrupted = true;
 
         PltInterruptThread(&lossStatsThread);
         PltJoinThread(&lossStatsThread);
 
         PltInterruptThread(&controlReceiveThread);
         PltJoinThread(&controlReceiveThread);
-
-        if (ctlSock != INVALID_SOCKET) {
-            closeSocket(ctlSock);
-            ctlSock = INVALID_SOCKET;
-        }
 
         return err;
     }
@@ -1479,12 +1394,7 @@ int startControlStream(void) {
         stopping = true;
         PltSetEvent(&idrFrameRequiredEvent);
 
-        if (ctlSock != INVALID_SOCKET) {
-            shutdownTcpSocket(ctlSock);
-        }
-        else {
-            ConnectionInterrupted = true;
-        }
+        ConnectionInterrupted = true;
 
         PltInterruptThread(&lossStatsThread);
         PltJoinThread(&lossStatsThread);
@@ -1494,11 +1404,6 @@ int startControlStream(void) {
 
         PltInterruptThread(&requestIdrFrameThread);
         PltJoinThread(&requestIdrFrameThread);
-
-        if (ctlSock != INVALID_SOCKET) {
-            closeSocket(ctlSock);
-            ctlSock = INVALID_SOCKET;
-        }
 
         return err;
     }
@@ -1511,12 +1416,7 @@ int startControlStream(void) {
             PltSetEvent(&idrFrameRequiredEvent);
             LbqSignalQueueShutdown(&asyncCallbackQueue);
 
-            if (ctlSock != INVALID_SOCKET) {
-                shutdownTcpSocket(ctlSock);
-            }
-            else {
-                ConnectionInterrupted = true;
-            }
+            ConnectionInterrupted = true;
 
             PltInterruptThread(&lossStatsThread);
             PltJoinThread(&lossStatsThread);
@@ -1530,10 +1430,6 @@ int startControlStream(void) {
             PltInterruptThread(&asyncCallbackThread);
             PltJoinThread(&asyncCallbackThread);
 
-            if (ctlSock != INVALID_SOCKET) {
-                closeSocket(ctlSock);
-                ctlSock = INVALID_SOCKET;
-            }
             return err;
         }
     }
