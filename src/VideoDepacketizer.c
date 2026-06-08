@@ -536,7 +536,7 @@ static void reassembleFrame(PVIDEO_DEPACKETIZER depacketizer,int frameNumber) {
             
             depacketizer->nalChainHead = depacketizer->nalChainTail = NULL;
             depacketizer->nalChainDataLength = 0;
-
+            PltUnlockMutex(&entryMutex);
             if ((VideoCallbacks.capabilities & CAPABILITY_DIRECT_SUBMIT) == 0) {
                 if (LbqOfferQueueItem(&depacketizer->decodeUnitQueue, qdu, &qdu->entry) == LBQ_BOUND_EXCEEDED) {
                     Limelog("Video decode unit queue overflow=====> %d\n",depacketizer->trackIndex);
@@ -574,7 +574,6 @@ static void reassembleFrame(PVIDEO_DEPACKETIZER depacketizer,int frameNumber) {
 
             // Move the start of our (potential) RFI window to the next frame
             depacketizer->startFrameNumber = depacketizer->nextFrameNumber;
-            PltUnlockMutex(&entryMutex);
         }
     }
 }
