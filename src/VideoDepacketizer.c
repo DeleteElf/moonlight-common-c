@@ -786,6 +786,10 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
       return;
     if(depacketizer->decodeUnitQueue.shutdown) //解码器都销毁了，不再继续
       return;
+    frameIndex = videoPacket->frameIndex;
+    if(depacketizer->waitingForIdrFrame){
+      Limelog("Depacketizer waiting for idr frame: %d", frameIndex);
+    }
 
     // Mask the top 8 bits from the SPI
     videoPacket->streamPacketIndex >>= 8;
@@ -797,7 +801,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
 
     fecCurrentBlockNumber = (videoPacket->multiFecBlocks >> 4) & 0x3;
     fecLastBlockNumber = (videoPacket->multiFecBlocks >> 6) & 0x3;
-    frameIndex = videoPacket->frameIndex;
+
     flags = videoPacket->flags;
     firstPacket = isFirstPacket(flags, fecCurrentBlockNumber);
     lastPacket = (flags & FLAG_EOF) && fecCurrentBlockNumber == fecLastBlockNumber;
@@ -1036,7 +1040,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
     int ssrc=(*existingEntry)->entry.ssrc;
     if (NegotiatedVideoFormat & (VIDEO_FORMAT_MASK_H264 | VIDEO_FORMAT_MASK_H265)) {
         if (firstPacket && isIdrFrameStart(&currentPos)) {
-            Limelog("video packet is idr===========================>%d\n",ssrc);
+            Limelog("rtp payload: video packet is idr===========================>%d\n",ssrc);
 
             // SPS and PPS prefix is padded between NALs, so we must decode it with the slow path
             processAvcHevcRtpPayloadSlow(depacketizer,&currentPos, existingEntry);
