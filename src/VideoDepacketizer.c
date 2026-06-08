@@ -116,7 +116,11 @@ static void cleanupFrameState(PVIDEO_DEPACKETIZER depacketizer) {
     while (depacketizer->nalChainHead) {
         lastEntry = (PLENTRY_INTERNAL) depacketizer->nalChainHead;
         depacketizer->nalChainHead = lastEntry->entry.next;
-        free(lastEntry->allocPtr);
+        if(depacketizer->nalChainHead)
+          free(lastEntry->allocPtr);
+        else if((lastEntry->entry.ssrc==0||lastEntry->entry.ssrc==1)){//最后一个数据，需要更严谨的判断，防止错误
+          free(lastEntry->allocPtr);
+        }
     }
     depacketizer->nalChainHead =NULL;
     depacketizer->nalChainTail = NULL;
