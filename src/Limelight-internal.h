@@ -49,7 +49,7 @@ extern uint32_t EncryptionFeaturesEnabled;
 
 // ENet channel ID values
 #define CTRL_CHANNEL_GENERIC      0x00
-#define CTRL_CHANNEL_URGENT       0x01 // IDR and reference frame invalidation requests
+#define CTRL_CHANNEL_URGENT       0x01 // IDR, LTR ACK and RFI
 #define CTRL_CHANNEL_KEYBOARD     0x02
 #define CTRL_CHANNEL_MOUSE        0x03
 #define CTRL_CHANNEL_PEN          0x04
@@ -95,6 +95,14 @@ extern uint32_t EncryptionFeaturesEnabled;
 // Internal macro for checking the magic byte of the audio configuration value
 #define MAGIC_BYTE_FROM_AUDIO_CONFIG(x) ((x) & 0xFF)
 
+typedef struct _QUEUED_REFERENCE_FRAME_CONTROL {
+    int trackIndex;
+    uint32_t startFrame;
+    uint32_t endFrame;
+    bool invalidate; // true: RFI(startFrame, endFrame); false: LTR_ACK(startFrame)
+    LINKED_BLOCKING_QUEUE_ENTRY entry;
+} QUEUED_REFERENCE_FRAME_CONTROL, *PQUEUED_REFERENCE_FRAME_CONTROL;
+
 int extractVersionQuadFromString(const char* string, int* quad);
 bool isReferenceFrameInvalidationSupportedByDecoder(void);
 bool isReferenceFrameInvalidationEnabled(void);
@@ -112,8 +120,9 @@ int stopControlStream(void);
 void destroyControlStream(void);
 int getLastSeenFrame(int trackIndex);
 int getLastGoodFrame(int trackIndex);
+void setLastGoodFrame(int trackIndex,int frameIndex);
 void connectionDetectedFrameLoss(int trackIndex, uint32_t startFrame, uint32_t endFrame);
-void connectionReceivedCompleteFrame(int trackIndex,uint32_t frameIndex);
+void connectionReceivedCompleteFrame(int trackIndex,uint32_t frameIndex, bool frameIsLTR);
 void connectionSawFrame(PRTP_VIDEO_QUEUE queue);
 void connectionSendFrameFecStatus(PSS_FRAME_FEC_STATUS fecStatus);
 int sendInputPacketOnControlStream(unsigned char* data, int length);
