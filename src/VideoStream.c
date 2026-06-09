@@ -316,3 +316,6 @@ void setLastGoodFrame(int trackIndex,int frameIndex){
     rtpQueues[trackIndex].lastGoodFrame = frameIndex;
     rtpQueues[trackIndex].intervalGoodFrameCount++;
 }
+const RTP_VIDEO_STATS* LiGetRTPVideoStats(int trackIndex) {
+    return &rtpQueues[trackIndex].stats;
+}
