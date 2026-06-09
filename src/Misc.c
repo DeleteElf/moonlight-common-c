@@ -67,6 +67,10 @@ uint64_t LiGetMillis(void) {
     return PltGetMillis();
 }
 
+uint64_t LiGetMicroseconds(void) {
+    return PltGetMicroseconds();
+}
+
 uint32_t LiGetHostFeatureFlags(void) {
     return SunshineFeatureFlags;
 }
