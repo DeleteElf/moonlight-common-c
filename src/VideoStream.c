@@ -7,7 +7,6 @@
 
 static PRTP_VIDEO_QUEUE rtpQueues;
 static int rtpQueueCount;
-//static RTP_VIDEO_QUEUE rtpQueue;
 
 static PPLT_CRYPTO_CONTEXT decryptionCtx;
 
@@ -51,7 +50,7 @@ void initializeVideoStream(int displayCount) {
 }
 
 // Clean up the video stream
-void destroyVideoStream() {
+void destroyVideoStream(void) {
     PltDestroyCryptoContext(decryptionCtx);
     destroyVideoDepacketizer();
 //    RtpvCleanupQueue(&rtpQueue);
@@ -306,16 +305,14 @@ int startVideoStream(void* rendererContext, int drFlags) {
     return 0;
 }
 
-// When we receive a frame, update the number of our current frame
-void connectionReceivedCompleteFrame(int trackIndex,uint32_t frameIndex) {
-    rtpQueues[trackIndex].lastGoodFrame = frameIndex;
-    rtpQueues[trackIndex].intervalGoodFrameCount++;
-}
-
 int getLastSeenFrame(int trackIndex){
     return rtpQueues[trackIndex].lastSeenFrame;
 }
 
 int getLastGoodFrame(int trackIndex){
     return rtpQueues[trackIndex].lastGoodFrame;
+}
+void setLastGoodFrame(int trackIndex,int frameIndex){
+    rtpQueues[trackIndex].lastGoodFrame = frameIndex;
+    rtpQueues[trackIndex].intervalGoodFrameCount++;
 }
