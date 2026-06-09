@@ -28,12 +28,6 @@ typedef struct _NVCTL_ENCRYPTED_PACKET_HEADER {
     // encrypted NVCTL_ENET_PACKET_HEADER_V2 and payload data follow
 } NVCTL_ENCRYPTED_PACKET_HEADER, *PNVCTL_ENCRYPTED_PACKET_HEADER;
 
-typedef struct _QUEUED_FRAME_INVALIDATION_TUPLE {
-    uint32_t startFrame;
-    uint32_t endFrame;
-    LINKED_BLOCKING_QUEUE_ENTRY entry;
-} QUEUED_FRAME_INVALIDATION_TUPLE, *PQUEUED_FRAME_INVALIDATION_TUPLE;
-
 typedef struct _QUEUED_FRAME_FEC_STATUS {
     SS_FRAME_FEC_STATUS fecStatus;
     LINKED_BLOCKING_QUEUE_ENTRY entry;
@@ -102,7 +96,7 @@ static bool hdrEnabled;
 static SS_HDR_METADATA hdrMetadata;
 static uint32_t currentEnetSequenceNumber;
 
-static LINKED_BLOCKING_QUEUE invalidReferenceFrameTuples;
+static LINKED_BLOCKING_QUEUE referenceFrameControlQueue;
 static LINKED_BLOCKING_QUEUE frameFecStatusQueue;
 static LINKED_BLOCKING_QUEUE asyncCallbackQueue;
 static PLT_EVENT idrFrameRequiredEvent;
@@ -221,7 +215,7 @@ int initializeControlStream(int videoTrackCount) {
     }
     trackCount=videoTrackCount;
     PltCreateEvent(&idrFrameRequiredEvent);
-    LbqInitializeLinkedBlockingQueue(&invalidReferenceFrameTuples, 20);
+    LbqInitializeLinkedBlockingQueue(&referenceFrameControlQueue, 20);
     LbqInitializeLinkedBlockingQueue(&frameFecStatusQueue, 8); // Limits number of frame status reports per periodic ping interval
     LbqInitializeLinkedBlockingQueue(&asyncCallbackQueue, 30);
 
@@ -267,7 +261,7 @@ void destroyControlStream(void) {
     PltDestroyCryptoContext(encryptionCtx);
     PltDestroyCryptoContext(decryptionCtx);
     PltCloseEvent(&idrFrameRequiredEvent);
-    freeBasicLbqList(LbqDestroyLinkedBlockingQueue(&invalidReferenceFrameTuples));
+    freeBasicLbqList(LbqDestroyLinkedBlockingQueue(&referenceFrameControlQueue));
     freeBasicLbqList(LbqDestroyLinkedBlockingQueue(&frameFecStatusQueue));
     freeBasicLbqList(LbqDestroyLinkedBlockingQueue(&asyncCallbackQueue));
 }
@@ -276,12 +270,16 @@ static void queueFrameInvalidationTuple(int trackIndex,uint32_t startFrame, uint
     LC_ASSERT(startFrame <= endFrame);
 
     if (isReferenceFrameInvalidationEnabled()) {
-        PQUEUED_FRAME_INVALIDATION_TUPLE qfit;
+        PQUEUED_REFERENCE_FRAME_CONTROL qfit;
         qfit = malloc(sizeof(*qfit));
         if (qfit != NULL) {
-            qfit->startFrame = startFrame;
-            qfit->endFrame = endFrame;
-            if (LbqOfferQueueItem(&invalidReferenceFrameTuples, qfit, &qfit->entry) == LBQ_BOUND_EXCEEDED) {
+            *qfit = (QUEUED_REFERENCE_FRAME_CONTROL){
+                    .startFrame = startFrame,
+                    .endFrame = endFrame,
+                    .trackIndex=trackIndex,
+                    .invalidate = true,
+            };
+            if (LbqOfferQueueItem(&referenceFrameControlQueue, qfit, &qfit->entry) == LBQ_BOUND_EXCEEDED) {
                 // Too many invalidation tuples, so we need an IDR frame now
                 Limelog("RFI range list reached maximum size limit\n");
                 free(qfit);
@@ -301,7 +299,7 @@ static void queueFrameInvalidationTuple(int trackIndex,uint32_t startFrame, uint
 void LiRequestIdrFrame(int trackIndex) {
     // Any reference frame invalidation requests should be dropped now.
     // We require a full IDR frame to recover.
-    freeBasicLbqList(LbqFlushQueueItems(&invalidReferenceFrameTuples));
+    freeBasicLbqList(LbqFlushQueueItems(&referenceFrameControlQueue));
 
     idrEvents[trackIndex].signal=true;//传递轨道索引
     // Request the IDR frame
@@ -311,6 +309,32 @@ void LiRequestIdrFrame(int trackIndex) {
 // Invalidate reference frames lost by the network
 void connectionDetectedFrameLoss(int trackIndex,uint32_t startFrame, uint32_t endFrame) {
     queueFrameInvalidationTuple(trackIndex,startFrame, endFrame);
+}
+
+// When we receive a frame, update the number of our current frame
+// and send ACK control message if the frame is LTR
+void connectionReceivedCompleteFrame(int trackIndex,uint32_t frameIndex, bool frameIsLTR) {
+    setLastGoodFrame(trackIndex,frameIndex);
+
+    if (frameIsLTR && IS_SUNSHINE() && isReferenceFrameInvalidationEnabled()) {
+        // Queue LTR frame ACK control message
+        PQUEUED_REFERENCE_FRAME_CONTROL qfit;
+        qfit = malloc(sizeof(*qfit));
+        if (qfit != NULL) {
+            *qfit = (QUEUED_REFERENCE_FRAME_CONTROL){
+                    .startFrame = frameIndex,
+                    .trackIndex= trackIndex,
+                    .invalidate = false,
+            };
+            if (LbqOfferQueueItem(&referenceFrameControlQueue, qfit, &qfit->entry) == LBQ_BOUND_EXCEEDED) {
+                // This shouldn't happen and indicates that something has gone wrong with the queue
+                LC_ASSERT(false);
+                Limelog("Couldn't queue LTR ACK because the list has reached maximum size limit\n");
+                free(qfit);
+                LiRequestIdrFrame(trackIndex);
+            }
+        }
+    }
 }
 
 void connectionSendFrameFecStatus(PSS_FRAME_FEC_STATUS fecStatus) {
@@ -1132,9 +1156,8 @@ static void requestInvalidateReferenceFrames(uint32_t startFrame, uint32_t endFr
 
     // Send the reference frame invalidation request and read the response
     if (!sendMessageAndDiscardReply(packetTypes[IDX_INVALIDATE_REF_FRAMES],
-                                    sizeof(payload),
-                                    payload)) {
-        Limelog("Request Invaldiate Reference Frames: Transaction failed: %d\n", (int)LastSocketError());
+                                    sizeof(payload),payload)) {
+        Limelog("Request Invalidate Reference Frames: Transaction failed: %d\n", (int)LastSocketError());
         ListenerCallbacks.connectionTerminated(LastSocketFail());
         return;
     }
@@ -1142,32 +1165,62 @@ static void requestInvalidateReferenceFrames(uint32_t startFrame, uint32_t endFr
     Limelog("Invalidate reference frame request sent (%d to %d)\n", startFrame, endFrame);
 }
 
-static void invalidateRefFramesFunc(void* context) {
+static void confirmLongtermReferenceFrame(uint32_t trackIndex,uint32_t frameIndex) {
+    LC_ASSERT(isReferenceFrameInvalidationEnabled());
+
+    SS_LTR_FRAME_ACK payload = {
+        .frameIndex = LE32(frameIndex),
+        .trackIndex= LE32(trackIndex),
+    };
+
+    // Send LTR frame ACK and don't wait for response
+    if (!sendMessageAndForget(SS_LTR_FRAME_ACK_PTYPE,
+                              sizeof(payload),
+                              &payload)) {
+        Limelog("LTR frame ACK: Transaction failed: %d\n", (int)LastSocketError());
+        ListenerCallbacks.connectionTerminated(LastSocketFail());
+        return;
+    }
+}
+
+static void referenceFrameControlFunc(void* context) {
     LC_ASSERT(isReferenceFrameInvalidationEnabled());
 
     while (!PltIsThreadInterrupted(&invalidateRefFramesThread)) {
-        PQUEUED_FRAME_INVALIDATION_TUPLE qfit;
-        uint32_t startFrame;
-        uint32_t endFrame;
-
-        // Wait for a reference frame invalidation request or a request to shutdown
-        if (LbqWaitForQueueElement(&invalidReferenceFrameTuples, (void**)&qfit) != LBQ_SUCCESS) {
+        PQUEUED_REFERENCE_FRAME_CONTROL qfit;
+        uint32_t invalidateStartFrame;
+        uint32_t invalidateEndFrame;
+        bool invalidate = false;
+        // Wait for a reference frame control message or a request to shutdown
+        if (LbqWaitForQueueElement(&referenceFrameControlQueue, (void**)&qfit) != LBQ_SUCCESS) {
             // Bail if we're stopping
             return;
         }
 
-        startFrame = qfit->startFrame;
-        endFrame = qfit->endFrame;
-
-        // Aggregate all lost frames into one range
         do {
-            LC_ASSERT(qfit->endFrame >= endFrame);
-            endFrame = qfit->endFrame;
+            if (qfit->invalidate) {
+                if (!invalidate) {
+                    invalidateStartFrame = qfit->startFrame;
+                    invalidateEndFrame = qfit->endFrame;
+                    invalidate = true;
+                }
+                else {
+                    // Aggregate all lost frames into one range
+                    LC_ASSERT(qfit->endFrame >= invalidateEndFrame);
+                    invalidateEndFrame = qfit->endFrame;
+                }
+            }
+            else {
+                // Send LTR frame ACK
+                confirmLongtermReferenceFrame(qfit->trackIndex, qfit->startFrame);
+            }
             free(qfit);
-        } while (LbqPollQueueElement(&invalidReferenceFrameTuples, (void**)&qfit) == LBQ_SUCCESS);
+        } while (LbqPollQueueElement(&referenceFrameControlQueue, (void**)&qfit) == LBQ_SUCCESS);
 
-        // Send the reference frame invalidation request
-        requestInvalidateReferenceFrames(startFrame, endFrame);
+        if (invalidate) {
+            // Send the reference frame invalidation request
+            requestInvalidateReferenceFrames(invalidateStartFrame, invalidateEndFrame);
+        }
     }
 }
 
@@ -1181,8 +1234,8 @@ static void requestIdrFrameFunc(void* context) {
             return;
         }
 
-        // Any pending reference frame invalidation requests are now redundant
-        freeBasicLbqList(LbqFlushQueueItems(&invalidReferenceFrameTuples));
+        // Any pending RFI requests and LTR frame ACK messages are now redundant
+        freeBasicLbqList(LbqFlushQueueItems(&referenceFrameControlQueue));
         for (int i = 0; i < idrEventCount; ++i) {
             IDR_EVENT* event=&idrEvents[i];
             if(event->signal){
@@ -1205,7 +1258,7 @@ int stopControlStream(void) {
         }
     }
 
-    LbqSignalQueueShutdown(&invalidReferenceFrameTuples);
+    LbqSignalQueueShutdown(&referenceFrameControlQueue);
     LbqSignalQueueShutdown(&frameFecStatusQueue);
     LbqSignalQueueDrain(&asyncCallbackQueue);
     PltSetEvent(&idrFrameRequiredEvent);
@@ -1410,7 +1463,7 @@ int startControlStream(void) {
 
     // Only create the reference frame invalidation thread if RFI is enabled
     if (isReferenceFrameInvalidationEnabled()) {
-        err = PltCreateThread("InvRefFrames", invalidateRefFramesFunc, NULL, &invalidateRefFramesThread);
+        err = PltCreateThread("InvRefFrames", referenceFrameControlFunc, NULL, &invalidateRefFramesThread);
         if (err != 0) {
             stopping = true;
             PltSetEvent(&idrFrameRequiredEvent);
