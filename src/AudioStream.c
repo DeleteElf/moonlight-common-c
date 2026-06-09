@@ -221,7 +221,6 @@ static void AudioReceiveThreadProc(void* context) {
     PRTP_PACKET rtp;
     PQUEUED_AUDIO_PACKET packet;
     int queueStatus;
-    bool useSelect;
     uint32_t packetsToDrop;
     int waitingForAudioMs;
 
@@ -485,4 +484,8 @@ int LiSendAudioStreamEvent(const char* data, unsigned int length,unsigned  int p
         return 0;
     }
     return -1;
+}
+
+const RTP_AUDIO_STATS* LiGetRTPAudioStats(void) {
+    return &rtpAudioQueue.stats;
 }
