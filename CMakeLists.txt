@@ -2,6 +2,7 @@
 cmake_minimum_required(VERSION 3.1...4.0)
 project(moonlight-common-c LANGUAGES C)
 
+string(TOUPPER "x${CMAKE_BUILD_TYPE}" BUILD_TYPE)
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
 option(USE_MBEDTLS "Use MbedTLS instead of OpenSSL" OFF)
@@ -59,7 +60,6 @@ else()
   target_include_directories(moonlight-common-c SYSTEM PRIVATE ${OPENSSL_INCLUDE_DIR})
 endif()
 
-string(TOUPPER "x${CMAKE_BUILD_TYPE}" BUILD_TYPE)
 if("${BUILD_TYPE}" STREQUAL "XDEBUG")
   target_compile_definitions(moonlight-common-c PRIVATE LC_DEBUG)
 else()
