@@ -371,15 +371,7 @@ static PSDP_OPTION getAttributesList(char*urlSafeAddr) {
         err |= addAttributeString(&optionHead, "x-nv-aqos.qosTrafficType", "0");
     }
 
-//    if (AppVersionQuad[0] == 3) {
-//        err |= addGen3Options(&optionHead, urlSafeAddr);
-//    }
-//    else if (AppVersionQuad[0] == 4) {
-//        err |= addGen4Options(&optionHead, urlSafeAddr);
-//    }
-//    else {
-        err |= addGen5Options(&optionHead);
-//    }
+    err |= addGen5Options(&optionHead);
 
     audioChannelCount = CHANNEL_COUNT_FROM_AUDIO_CONFIGURATION(StreamConfig.audioConfiguration);
     audioChannelMask = CHANNEL_MASK_FROM_AUDIO_CONFIGURATION(StreamConfig.audioConfiguration);
