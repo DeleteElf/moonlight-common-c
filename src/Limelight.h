@@ -912,7 +912,7 @@ typedef struct _RTP_VIDEO_STATS {
     uint32_t packetCountFecInvalid;    // invalid FEC packet
 } RTP_VIDEO_STATS, *PRTP_VIDEO_STATS;
 
-const RTP_VIDEO_STATS* LiGetRTPVideoStats(void);
+const RTP_VIDEO_STATS* LiGetRTPVideoStats(int trackIndex);
 
 // Port index flags for use with LiGetPortFromPortFlagIndex() and LiGetProtocolFromPortFlagIndex()
 #define ML_PORT_INDEX_TCP_47984 0
