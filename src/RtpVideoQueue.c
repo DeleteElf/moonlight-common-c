@@ -687,9 +687,7 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
             // If the frame immediately preceding this one was lost, we may have already
             // reported it using our speculative RFI logic. Don't report it again.
             if (queue->currentFrameNumber + 1 != nvPacket->frameIndex || !queue->reportedLostFrame) {
-                // NB: We only have to notify for the most recent lost frame, since
-                // the depacketizer will report the RFI range starting at the last
-                // frame it saw.
+                //我们只需通知最近丢失的帧，因为解包器会报告从它最后看到的帧开始的RFI范围。
                 notifyFrameLost(packet->ssrc, nvPacket->frameIndex - 1, false);
             }
         }
@@ -802,7 +800,7 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
                 LC_ASSERT(queue->completedFecBlockList.head == NULL);
                 LC_ASSERT(queue->completedFecBlockList.tail == NULL);
                 LC_ASSERT(queue->completedFecBlockList.count == 0);
-
+//                Limelog("解包器【%d】解包完成：%d\n",trackIndex,queue->currentFrameNumber);
                 // Continue to the next frame
                 queue->currentFrameNumber++;
                 queue->multiFecCurrentBlockNumber = 0;

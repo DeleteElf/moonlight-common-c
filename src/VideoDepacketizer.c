@@ -1,5 +1,4 @@
 #include "Limelight-internal.h"
-// #include <stdatomic.h> //这个需要C11...
 
 #define DR_CLEANUP -1000
 
@@ -7,7 +6,11 @@
 
 //解包器 对象化处理
 typedef struct _VIDEO_DEPACKETIZER {
+    //为每个解码器分配安全锁
+//    PLT_MUTEX entryMutex;
+    //头部
     PLENTRY nalChainHead;
+    //尾部
     PLENTRY nalChainTail;
     int nalChainDataLength;
     unsigned int nextFrameNumber;
@@ -20,10 +23,11 @@ typedef struct _VIDEO_DEPACKETIZER {
     int frameType;
     uint16_t lastPacketPayloadLength;
     bool strictIdrFrameWait;
-    uint64_t syntheticPtsBase;
+    uint64_t syntheticPtsBaseUs;
     uint16_t frameHostProcessingLatency;
-    uint64_t firstPacketReceiveTime;
-    unsigned int firstPacketPresentationTime;
+    uint64_t firstPacketReceiveTimeUs;
+    uint64_t firstPacketPresentationTime;
+    uint32_t firstPacketRtpTimestamp;
     bool dropStatePending;
     bool idrFrameProcessed;
 
@@ -47,9 +51,8 @@ typedef struct _BUFFER_DESC {
 
 typedef struct _LENTRY_INTERNAL {
     LENTRY entry;
-    // atomic_uintptr_t allocPtr;
-    void* allocPtr;
-} LENTRY_INTERNAL, *PLENTRY_INTERNAL;
+    void *allocPtr;
+}LENTRY_INTERNAL, *PLENTRY_INTERNAL;
 
 #define H264_NAL_TYPE(x) ((x) & 0x1F)
 #define HEVC_NAL_TYPE(x) (((x) & 0x7E) >> 1)
@@ -65,9 +68,7 @@ typedef struct _LENTRY_INTERNAL {
 #define HEVC_NAL_TYPE_AUD 35
 #define HEVC_NAL_TYPE_FILLER 38
 #define HEVC_NAL_TYPE_SEI 39
-
-static PLT_MUTEX entryMutex;
-
+//解码器数组
 static PVIDEO_DEPACKETIZERS depacketizers;
 // Init
 void initializeVideoDepacketizer(int pktSize,int trackCount) {
@@ -80,7 +81,6 @@ void initializeVideoDepacketizer(int pktSize,int trackCount) {
         free(depacketizers->data);
     }
     depacketizers->data= malloc(sizeof(VIDEO_DEPACKETIZER)*trackCount);//多少个轨道，我们就需要多少个解包器
-
     for (int i = 0; i < trackCount; ++i) {
         VIDEO_DEPACKETIZER depacketizer;
         LbqInitializeLinkedBlockingQueue(&depacketizer.decodeUnitQueue, 15);
@@ -92,9 +92,9 @@ void initializeVideoDepacketizer(int pktSize,int trackCount) {
         depacketizer.waitingForRefInvalFrame = false;
         depacketizer.lastPacketInStream = UINT32_MAX;
         depacketizer.decodingFrame = false;
-        depacketizer.syntheticPtsBase = 0;
+        depacketizer.syntheticPtsBaseUs = 0;
         depacketizer.frameHostProcessingLatency = 0;
-        depacketizer.firstPacketReceiveTime = 0;
+        depacketizer.firstPacketReceiveTimeUs = 0;
         depacketizer.firstPacketPresentationTime = 0;
         depacketizer.lastPacketPayloadLength = 0;
         depacketizer.dropStatePending = false;
@@ -111,27 +111,31 @@ void initializeVideoDepacketizer(int pktSize,int trackCount) {
 
 // Free the NAL chain
 static void cleanupFrameState(PVIDEO_DEPACKETIZER depacketizer) {
-    PltLockMutex(&entryMutex);
-    PLENTRY_INTERNAL lastEntry;
-    while (depacketizer->nalChainHead) {
+    PLENTRY_INTERNAL lastEntry = NULL;
+//    PltLockMutex(&depacketizer->entryMutex);
+    if (depacketizer->nalChainHead) {
         lastEntry = (PLENTRY_INTERNAL) depacketizer->nalChainHead;
-        depacketizer->nalChainHead = lastEntry->entry.next;
-        if(depacketizer->nalChainHead)
-          free(lastEntry->allocPtr);
-        else if((lastEntry->entry.ssrc==0||lastEntry->entry.ssrc==1)){//最后一个数据，需要更严谨的判断，防止错误
-          free(lastEntry->allocPtr);
+        depacketizer->nalChainHead = depacketizer->nalChainTail = NULL;
+        depacketizer->nalChainDataLength = 0;
+    }
+//    PltUnlockMutex(&depacketizer->entryMutex);
+    while (lastEntry) {
+        PLENTRY nextEntry = lastEntry->entry.next;
+        if (nextEntry) {
+            free(lastEntry->allocPtr);
+            lastEntry = (PLENTRY_INTERNAL) nextEntry;
+        } else {
+            lastEntry = NULL;
         }
     }
-    depacketizer->nalChainHead =NULL;
-    depacketizer->nalChainTail = NULL;
-    depacketizer->nalChainDataLength = 0;
-    PltUnlockMutex(&entryMutex);
 }
 
 // Cleanup frame state and set that we're waiting for an IDR Frame
 static void dropFrameState(PVIDEO_DEPACKETIZER depacketizer) {
+    Limelog("正在处理丢包事件！！！=====================>%d\n",depacketizer->trackIndex);
+
     // This may only be called at frame boundaries
-    // LC_ASSERT(!depacketizer->decodingFrame);
+    LC_ASSERT(!depacketizer->decodingFrame);
     // We're dropping frame state now
     depacketizer->dropStatePending = false;
 
@@ -327,13 +331,11 @@ void LiCompleteVideoFrame(VIDEO_FRAME_HANDLE handle, int drStatus,int trackIndex
         // reference frame invalidation.
         depacketizers->data[trackIndex].idrFrameProcessed = true;
     }
-
     while (qdu->decodeUnit.bufferList != NULL) {
         lastEntry = (PLENTRY_INTERNAL)qdu->decodeUnit.bufferList;
         qdu->decodeUnit.bufferList = lastEntry->entry.next;
         free(lastEntry->allocPtr);
     }
-
     // We will have stack-allocated entries iff we have a direct-submit decoder
     if ((VideoCallbacks.capabilities & CAPABILITY_DIRECT_SUBMIT) == 0) {
         free(qdu);
@@ -498,7 +500,7 @@ static bool isIdrFrameStart(PBUFFER_DESC buffer) {
 }
 
 // 根据给定的框架编号重新组装框架
-static void reassembleFrame(PVIDEO_DEPACKETIZER depacketizer,int frameNumber) {
+static void reassembleFrame(PVIDEO_DEPACKETIZER depacketizer,int frameNumber, bool frameIsLTR) {
     if (depacketizer->nalChainHead != NULL) {
         QUEUED_DECODE_UNIT qduDS;
         PQUEUED_DECODE_UNIT qdu;
@@ -512,15 +514,16 @@ static void reassembleFrame(PVIDEO_DEPACKETIZER depacketizer,int frameNumber) {
         }
 
         if (qdu != NULL) {
-            PltLockMutex(&entryMutex);
+//            PltLockMutex(&depacketizer->entryMutex);
             qdu->decodeUnit.bufferList = depacketizer->nalChainHead;
             qdu->decodeUnit.fullLength = depacketizer->nalChainDataLength;
             qdu->decodeUnit.frameType = depacketizer->frameType;
             qdu->decodeUnit.frameNumber = frameNumber;
             qdu->decodeUnit.frameHostProcessingLatency = depacketizer->frameHostProcessingLatency;
-            qdu->decodeUnit.receiveTimeMs = depacketizer->firstPacketReceiveTime;
-            qdu->decodeUnit.presentationTimeMs = depacketizer->firstPacketPresentationTime;
-            qdu->decodeUnit.enqueueTimeMs = LiGetMillis();
+            qdu->decodeUnit.receiveTimeUs = depacketizer->firstPacketReceiveTimeUs;
+            qdu->decodeUnit.presentationTimeUs = depacketizer->firstPacketPresentationTime;
+            qdu->decodeUnit.rtpTimestamp = depacketizer->firstPacketRtpTimestamp;
+            qdu->decodeUnit.enqueueTimeUs = PltGetMicroseconds();// LiGetMillis();
 
             // These might be wrong for a few frames during a transition between SDR and HDR,
             // but the effects shouldn't very noticable since that's an infrequent operation.
@@ -530,7 +533,8 @@ static void reassembleFrame(PVIDEO_DEPACKETIZER depacketizer,int frameNumber) {
             qdu->decodeUnit.colorspace = (uint8_t)(qdu->decodeUnit.hdrActive ? COLORSPACE_REC_2020 : StreamConfig.colorSpace);
 
             // Invoke the key frame callback if needed
-            if (depacketizer->nalChainHead->bufferType != BUFFER_TYPE_PICDATA || qdu->decodeUnit.frameType == FRAME_TYPE_IDR) {
+            if (depacketizer->nalChainHead->bufferType != BUFFER_TYPE_PICDATA
+            || qdu->decodeUnit.frameType == FRAME_TYPE_IDR) {
                 qdu->decodeUnit.frameType = FRAME_TYPE_IDR;
                 notifyKeyFrameReceived(depacketizer->trackIndex);
             }
@@ -540,7 +544,7 @@ static void reassembleFrame(PVIDEO_DEPACKETIZER depacketizer,int frameNumber) {
             
             depacketizer->nalChainHead = depacketizer->nalChainTail = NULL;
             depacketizer->nalChainDataLength = 0;
-            PltUnlockMutex(&entryMutex);
+//            PltUnlockMutex(&depacketizer->entryMutex);
             if ((VideoCallbacks.capabilities & CAPABILITY_DIRECT_SUBMIT) == 0) {
                 if (LbqOfferQueueItem(&depacketizer->decodeUnitQueue, qdu, &qdu->entry) == LBQ_BOUND_EXCEEDED) {
                     Limelog("Video decode unit queue overflow=====> %d\n",depacketizer->trackIndex);
@@ -549,9 +553,15 @@ static void reassembleFrame(PVIDEO_DEPACKETIZER depacketizer,int frameNumber) {
                     depacketizer->waitingForIdrFrame = true;
 
                     // Clear NAL state for the frame that we failed to enqueue
-                    depacketizer->nalChainHead = qdu->decodeUnit.bufferList;
-                    depacketizer->nalChainDataLength = qdu->decodeUnit.fullLength;
-                    dropFrameState(depacketizer);
+//                    depacketizer->nalChainHead = qdu->decodeUnit.bufferList;
+//                    depacketizer->nalChainDataLength = qdu->decodeUnit.fullLength;
+                    PLENTRY_INTERNAL lastEntry;
+                    while (qdu->decodeUnit.bufferList != NULL) {
+                        lastEntry = (PLENTRY_INTERNAL)qdu->decodeUnit.bufferList;
+                        qdu->decodeUnit.bufferList = lastEntry->entry.next;
+                        free(lastEntry->allocPtr);
+                    }
+                    // dropFrameState(depacketizer);
 
                     // Free the DU we were going to queue
                     free(qdu);
@@ -571,7 +581,7 @@ static void reassembleFrame(PVIDEO_DEPACKETIZER depacketizer,int frameNumber) {
             }
 
             // Notify the control connection
-            connectionReceivedCompleteFrame(depacketizer->trackIndex, frameNumber);
+            connectionReceivedCompleteFrame(depacketizer->trackIndex, frameNumber, frameIsLTR);
 
             // Clear frame drops
             depacketizer->consecutiveFrameDrops = 0;
@@ -645,7 +655,7 @@ static void queueFragment(PVIDEO_DEPACKETIZER depacketizer, PLENTRY_INTERNAL* ex
     }
 
     if (entry != NULL) {
-        PltLockMutex(&entryMutex);
+//        PltLockMutex(&depacketizer->entryMutex);
         entry->entry.next = NULL;
         entry->entry.length = length;
 
@@ -680,7 +690,7 @@ static void queueFragment(PVIDEO_DEPACKETIZER depacketizer, PLENTRY_INTERNAL* ex
             depacketizer->nalChainTail->next = (PLENTRY)entry;
             depacketizer->nalChainTail = depacketizer->nalChainTail->next;
         }
-        PltUnlockMutex(&entryMutex);
+//        PltUnlockMutex(&depacketizer->entryMutex);
     }
 }
 
@@ -746,7 +756,7 @@ static void processAvcHevcRtpPayloadSlow(PVIDEO_DEPACKETIZER depacketizer,PBUFFE
     }
 }
 
-// Dumps the decode unit queue and ensures the next frame submitted to the decoder will be an IDR frame
+// 清空解码单元队列，并确保提交给解码器的下一帧为IDR帧
 void requestDecoderRefresh(int trackIndex) {
     // Wait for the next IDR frame
     depacketizers->data[trackIndex].waitingForIdrFrame = true;
@@ -754,10 +764,8 @@ void requestDecoderRefresh(int trackIndex) {
     // Flush the decode unit queue
     freeDecodeUnitList(LbqFlushQueueItems(&depacketizers->data[trackIndex].decodeUnitQueue),trackIndex);
     
-    // Request the receive thread drop its state
-    // on the next call. We can't do it here because
-    // it may be trying to queue DUs and we'll nuke
-    // the state out from under it.
+    // 请求接收线程在下一次调用时丢弃其状态。我们无法在此处执行此操作，
+    // 因为它可能正在尝试排队数据处理单元（DU），而我们会在其状态下将其彻底清除。
     depacketizers->data[trackIndex].dropStatePending = true;
     
     // Request the IDR frame
@@ -776,24 +784,16 @@ static bool isFirstPacket(uint8_t flags, uint8_t fecBlockNumber) {
 // Process an RTP Payload
 // The caller will free *existingEntry unless we NULL it
 static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET videoPacket, int length,
-                       uint64_t receiveTimeMs, unsigned int presentationTimeMs,
+                       uint64_t receiveTimeUs, uint64_t presentationTimeUs, uint32_t rtpTimestamp,
                        PLENTRY_INTERNAL* existingEntry) {
     BUFFER_DESC currentPos;
     uint32_t frameIndex;
     uint8_t flags;
+    uint8_t extraFlags;
     bool firstPacket, lastPacket;
     uint32_t streamPacketIndex;
     uint8_t fecCurrentBlockNumber;
     uint8_t fecLastBlockNumber;
-
-    if(!depacketizer) //解码器都销毁了，不再继续
-      return;
-    if(depacketizer->decodeUnitQueue.shutdown) //解码器都销毁了，不再继续
-      return;
-    frameIndex = videoPacket->frameIndex;
-    if(depacketizer->waitingForIdrFrame){
-      Limelog("Depacketizer waiting for idr frame: %d", frameIndex);
-    }
 
     // Mask the top 8 bits from the SPI
     videoPacket->streamPacketIndex >>= 8;
@@ -805,8 +805,9 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
 
     fecCurrentBlockNumber = (videoPacket->multiFecBlocks >> 4) & 0x3;
     fecLastBlockNumber = (videoPacket->multiFecBlocks >> 6) & 0x3;
-
+    frameIndex = videoPacket->frameIndex;
     flags = videoPacket->flags;
+    extraFlags = videoPacket->extraFlags;
     firstPacket = isFirstPacket(flags, fecCurrentBlockNumber);
     lastPacket = (flags & FLAG_EOF) && fecCurrentBlockNumber == fecLastBlockNumber;
 
@@ -824,7 +825,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
     // the streamPacketIndex not matching correctly should find nearly all of the rest.
     if (isBefore24(streamPacketIndex, U24(depacketizer->lastPacketInStream + 1)) ||
             (!(flags & FLAG_SOF) && streamPacketIndex != U24(depacketizer->lastPacketInStream + 1))) {
-        Limelog("Depacketizer detected corrupt frame: %d", frameIndex);
+        Limelog("解包器[%d]检测到损坏的帧: %d",depacketizer->trackIndex, frameIndex);
         depacketizer->decodingFrame = false;
         depacketizer->nextFrameNumber = frameIndex + 1;
         dropFrameState(depacketizer);
@@ -846,10 +847,12 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
         // Make sure this is the next consecutive frame
         if (isBefore32(depacketizer->nextFrameNumber, frameIndex)) {
             if (depacketizer->nextFrameNumber + 1 == frameIndex) {
-                Limelog("Network dropped 1 frame (frame %d)\n", frameIndex - 1);
+                Limelog("解包器【%d】检测到从网络中接收的数据中，丢失了一帧视频数据(frame %d)\n",
+                        depacketizer->trackIndex,frameIndex - 1);
             }
             else {
-                Limelog("Network dropped %d frames (frames %d to %d)\n",
+                Limelog("解包器【%d】检测到从网络中接收的数据中，丢失了[%d]帧视频数据 (frames %d to %d)\n",
+                        depacketizer->trackIndex,
                         frameIndex - depacketizer->nextFrameNumber,
                         depacketizer->nextFrameNumber,
                         frameIndex - 1);
@@ -868,20 +871,21 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
         // We're now decoding a frame
         depacketizer->decodingFrame = true;
         depacketizer->frameType = FRAME_TYPE_PFRAME;
-        depacketizer->firstPacketReceiveTime = receiveTimeMs;
+        depacketizer->firstPacketReceiveTimeUs = receiveTimeUs;
         
         // Some versions of Sunshine don't send a valid PTS, so we will
         // synthesize one using the receive time as the time base.
-        if (!depacketizer->syntheticPtsBase) {
-            depacketizer->syntheticPtsBase = receiveTimeMs;
+        if (!depacketizer->syntheticPtsBaseUs) {
+            depacketizer->syntheticPtsBaseUs = receiveTimeUs;
         }
         
-        if (!presentationTimeMs && frameIndex > 0) {
-            depacketizer->firstPacketPresentationTime = (unsigned int)(receiveTimeMs - depacketizer->syntheticPtsBase);
+        if (!presentationTimeUs && frameIndex > 0) {
+            depacketizer->firstPacketPresentationTime = receiveTimeUs - depacketizer->syntheticPtsBaseUs;
         }
         else {
-            depacketizer->firstPacketPresentationTime = presentationTimeMs;
+            depacketizer->firstPacketPresentationTime = presentationTimeUs;
         }
+        depacketizer->firstPacketRtpTimestamp = rtpTimestamp;
     }
 
     depacketizer->lastPacketInStream = streamPacketIndex;
@@ -892,7 +896,6 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
     if (firstPacket && currentPos.length > 0) {
         // Parse the frame type from the header
         LC_ASSERT_VT(currentPos.length >= 4);
-
         if (APP_VERSION_AT_LEAST(7, 1, 350) && currentPos.length >= 4) {
             switch (currentPos.data[currentPos.offset + 3]) {
             case 1: // Normal P-frame
@@ -1082,11 +1085,11 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
             }
             else {
                 if (depacketizer->lastPacketPayloadLength <= frameHeaderSize) {
-                    Limelog("Invalid last payload length for header on frame %u: %u <= %u",
+                    Limelog("帧上标头的最后一个有效负载长度无效 [%u] %u: %u <= %u",depacketizer->trackIndex,
                             frameIndex, depacketizer->lastPacketPayloadLength, frameHeaderSize);
                 }
                 else {
-                    Limelog("Invalid last payload length for packet size on frame %u: %u > %u",
+                    Limelog("帧上数据包的最后一个有效载荷长度无效 [%u] %u: %u > %u",depacketizer->trackIndex,
                             frameIndex, depacketizer->lastPacketPayloadLength - frameHeaderSize, currentPos.length);
                 }
 
@@ -1119,7 +1122,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
         if (depacketizer->waitingForIdrFrame || depacketizer->waitingForRefInvalFrame) {
             // IDR wait takes priority over RFI wait (and an IDR frame will satisfy both)
             if (depacketizer->waitingForIdrFrame) {
-                Limelog("Waiting for IDR frame=================>track index: %d\n",depacketizer->trackIndex);
+                Limelog("等待IDR关键帧=================>track index: %d\n",depacketizer->trackIndex);
 
                 // We wait for the first fully received frame after a loss to approximate
                 // detection of the recovery of the network. Requesting an IDR frame while
@@ -1131,7 +1134,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
             else {
                 // If we need an RFI frame first, then drop this frame
                 // and update the reference frame invalidation window.
-                Limelog("Waiting for RFI frame\n");
+                Limelog("等待RFI帧（参考帧）\n");
                 connectionDetectedFrameLoss(depacketizer->trackIndex,depacketizer->startFrameNumber, frameIndex);
             }
 
@@ -1142,18 +1145,13 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
 
         LC_ASSERT(!depacketizer->waitingForNextSuccessfulFrame);
 
-        // Carry out any pending state drops. We can't just do this
-        // arbitrarily in the middle of processing a frame because
-        // may cause the depacketizer state to become corrupted. For
-        // example, if we drop state after the first packet, the
-        // depacketizer will next try to process a non-SOF packet,
-        // and cause it to assert.
+        // 执行任何待处理的状态丢弃操作。在处理帧的过程中，我们不能随意这样做，
+        // 因为这可能会导致解包器状态受损。例如，如果在第一个数据包之后丢弃状态，
+        // 解包器接下来会尝试处理一个非SOF（开始帧）数据包，从而导致其断言。
         if (depacketizer->dropStatePending) {
             if (depacketizer->nalChainHead && depacketizer->frameType == FRAME_TYPE_IDR) {
-                // Don't drop the frame state if this frame is an IDR frame itself,
-                // otherwise we'll lose this IDR frame without another in flight
-                // and have to wait until we hit our consecutive drop limit to
-                // request a new one (potentially several seconds).
+                // 如果该帧本身是IDR帧，则不要丢弃帧状态，否则在没有其他帧正在传输的情况下，
+                // 我们将丢失这个IDR帧，并且必须等到达到连续丢弃限制后才能请求一个新的（可能需要几秒钟）。
                 depacketizer->dropStatePending = false;
             }
             else {
@@ -1162,7 +1160,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
             }
         }
 
-        reassembleFrame(depacketizer,frameIndex);
+        reassembleFrame(depacketizer,frameIndex, extraFlags & NV_VIDEO_PACKET_EXTRA_FLAG_LTR_FRAME);
     }
 }
 
@@ -1172,9 +1170,9 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
 // that we lost a frame and submit an RFI request.
 void notifyFrameLost(int trackIndex,unsigned int frameNumber, bool speculative) {
     // We may not invalidate frames that we've already received
-    PVIDEO_DEPACKETIZER depacketizer=&depacketizers[trackIndex];
-    // LC_ASSERT(frameNumber >= depacketizer->startFrameNumber);
-
+    PVIDEO_DEPACKETIZER depacketizer=&depacketizers->data[trackIndex];
+     // LC_ASSERT(frameNumber >= depacketizer->startFrameNumber);
+//    Limelog("解包器【%d】发生丢帧事件，期望：%d，收到：%d\n",depacketizer->trackIndex,depacketizer->nextFrameNumber,frameNumber);
     // Drop state and determine if we need an IDR frame or if RFI is okay
     dropFrameState(depacketizer);
 
@@ -1204,7 +1202,7 @@ void queueRtpPacket(int trackIndex,PRTPV_QUEUE_ENTRY queueEntryPtr) {
     RTPV_QUEUE_ENTRY queueEntry = *queueEntryPtr;
 
     LC_ASSERT(!queueEntry.isParity);
-    LC_ASSERT(queueEntry.receiveTimeMs != 0);
+    LC_ASSERT(queueEntry.receiveTimeUs != 0);
 
     dataOffset = sizeof(*queueEntry.packet);
     if (queueEntry.packet->header & FLAG_EXTENSION) {
@@ -1214,22 +1212,21 @@ void queueRtpPacket(int trackIndex,PRTPV_QUEUE_ENTRY queueEntryPtr) {
     // The packet length was validated by the RtpVideoQueue
     LC_ASSERT(queueEntry.length >= dataOffset + (int)sizeof(NV_VIDEO_PACKET));
 
-    // Reuse the memory reserved for the RTPFEC_QUEUE_ENTRY to store the LENTRY_INTERNAL
-    // now that we're in the depacketizer. We saved a copy of the real FEC queue entry
-    // on the stack here so we can safely modify this memory in place.
+    // 既然我们已经进入了拆包器，那么就重新使用为RTPFEC_QUEUE_ENTRY预留的内存来存储LENTRY_INTERNAL。
+    // 我们在此处堆栈上保存了真实FEC队列条目的副本，这样我们就可以安全地就地修改这部分内存。
     LC_ASSERT(sizeof(LENTRY_INTERNAL) <= sizeof(RTPV_QUEUE_ENTRY));
     PLENTRY_INTERNAL existingEntry = (PLENTRY_INTERNAL)queueEntryPtr;
     existingEntry->allocPtr = queueEntry.packet;
     existingEntry->entry.ssrc=queueEntry.packet->ssrc;//传递ssrc
     processRtpPayload(&depacketizers->data[trackIndex],(PNV_VIDEO_PACKET)(((char*)queueEntry.packet) + dataOffset),
                       queueEntry.length - dataOffset,
-                      queueEntry.receiveTimeMs,
-                      queueEntry.presentationTimeMs,
+                      queueEntry.receiveTimeUs,
+                      queueEntry.presentationTimeUs,
+                      queueEntry.rtpTimestamp,
                       &existingEntry);
 
     if (existingEntry != NULL) {
-        // processRtpPayload didn't want this packet, so just free it
-      free(existingEntry->allocPtr);
+      free(existingEntry->allocPtr);// processRtpPayload 不需要这个数据包，丢弃它
     }
 }
 
