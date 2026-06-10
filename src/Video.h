@@ -74,6 +74,7 @@ typedef struct _SS_FRAME_FEC_STATUS {
 typedef struct _SS_LTR_FRAME_ACK {
     uint32_t frameIndex;
     uint32_t reserved;
+    uint32_t trackIndex;
 } SS_LTR_FRAME_ACK, *PSS_LTR_FRAME_ACK;
 
 // Fields are little-endian

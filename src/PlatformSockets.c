@@ -36,7 +36,8 @@ DWORD (WINAPI *pfnWlanSetInterface)(HANDLE hClientHandle, CONST GUID *pInterface
 #endif
 
 #ifdef __3DS__
-in_port_t n3ds_udp_port = 47998;
+//in_port_t n3ds_udp_port = 47998;
+in_port_t n3ds_udp_port = 48002;
 static const int n3ds_max_buf_size = 0x20000;
 #endif
 

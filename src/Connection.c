@@ -27,8 +27,7 @@ bool AudioEncryptionEnabled;
 bool ReferenceFrameInvalidationSupported;
 uint16_t RtspPortNumber;
 uint16_t ControlPortNumber;
-uint16_t AudioPortNumber;
-uint16_t VideoPortNumber;
+
 SS_PING AudioPingPayload;
 SS_PING VideoPingPayload;
 uint32_t ControlConnectData;
@@ -36,6 +35,32 @@ uint32_t SunshineFeatureFlags;
 uint32_t EncryptionFeaturesSupported;
 uint32_t EncryptionFeaturesRequested;
 uint32_t EncryptionFeaturesEnabled;
+
+NetworkSendCallback networkSendCallback;
+NetworkReceiveCallback networkReceiveCallback;
+NetworkStopCallback networkChannelStopCallback;
+NetworkStartCallback networkChannelStartCallback;
+void LiSetNetworkSend(NetworkSendCallback callback){
+    networkSendCallback=callback;
+}
+
+void LiSetNetworkReceive(NetworkReceiveCallback callback){
+    networkReceiveCallback=callback;
+}
+
+void LiSetNetworkChannelStop(NetworkStopCallback callback){
+    networkChannelStopCallback=callback;
+}
+
+void LiSetNetworkChannelStart(NetworkStartCallback callback){
+    networkChannelStartCallback=callback;
+}
+
+HttpRtspMessageCallback httpRtspMessageCallback;
+void LiSetHttpRtspMessage(HttpRtspMessageCallback callback){
+    if(httpRtspMessageCallback!=callback)
+        httpRtspMessageCallback=callback;
+}
 
 // Connection stages
 static const char* stageNames[STAGE_MAX] = {
@@ -264,9 +289,7 @@ int LiStartConnection(PSERVER_INFORMATION serverInfo, PSTREAM_CONFIGURATION stre
     RemoteAddrString = strdup(serverInfo->address);
 
     // The values in RTSP SETUP will be used to populate these.
-    VideoPortNumber = 0;
     ControlPortNumber = 0;
-    AudioPortNumber = 0;
 
     // Parse RTSP port number from RTSP session URL
     if (!parseRtspPortNumberFromUrl(serverInfo->rtspSessionUrl, &RtspPortNumber)) {
@@ -345,33 +368,42 @@ int LiStartConnection(PSERVER_INFORMATION serverInfo, PSTREAM_CONFIGURATION stre
     Limelog("Resolving host name...");
     ListenerCallbacks.stageStarting(STAGE_NAME_RESOLUTION);
     LC_ASSERT(RtspPortNumber != 0);
-    if (RtspPortNumber != 48010) {
-        // If we have an alternate RTSP port, use that as our test port. The host probably
-        // isn't listening on 47989 or 47984 anyway, since they're using alternate ports.
+    //解析主机地址，并转换成ip地址
+    err = resolveHostName(serverInfo->address, AF_UNSPEC, RtspPortNumber, &RemoteAddr, &AddrLen);
+    if (err != 0) {
+        // Sleep for a second and try again. It's possible that we've attempt to connect
+        // before the host has gotten around to listening on the RTSP port. Give it some
+        // time before retrying.
+        PltSleepMs(1000);
         err = resolveHostName(serverInfo->address, AF_UNSPEC, RtspPortNumber, &RemoteAddr, &AddrLen);
-        if (err != 0) {
-            // Sleep for a second and try again. It's possible that we've attempt to connect
-            // before the host has gotten around to listening on the RTSP port. Give it some
-            // time before retrying.
-            PltSleepMs(1000);
-            err = resolveHostName(serverInfo->address, AF_UNSPEC, RtspPortNumber, &RemoteAddr, &AddrLen);
-        }
     }
-    else {
-        // We use TCP 47984 and 47989 first here because we know those should always be listening
-        // on hosts using the standard ports.
-        //
-        // TCP 48010 is a last resort because:
-        // a) it's not always listening and there's a race between listen() on the host and our connect()
-        // b) it's not used at all by certain host versions which perform RTSP over ENet
-        err = resolveHostName(serverInfo->address, AF_UNSPEC, 47984, &RemoteAddr, &AddrLen);
-        if (err != 0) {
-            err = resolveHostName(serverInfo->address, AF_UNSPEC, 47989, &RemoteAddr, &AddrLen);
-        }
-        if (err != 0) {
-            err = resolveHostName(serverInfo->address, AF_UNSPEC, 48010, &RemoteAddr, &AddrLen);
-        }
-    }
+//    if (RtspPortNumber != 48010) {
+//        // If we have an alternate RTSP port, use that as our test port. The host probably
+//        // isn't listening on 47989 or 47984 anyway, since they're using alternate ports.
+//        err = resolveHostName(serverInfo->address, AF_UNSPEC, RtspPortNumber, &RemoteAddr, &AddrLen);
+//        if (err != 0) {
+//            // Sleep for a second and try again. It's possible that we've attempt to connect
+//            // before the host has gotten around to listening on the RTSP port. Give it some
+//            // time before retrying.
+//            PltSleepMs(1000);
+//            err = resolveHostName(serverInfo->address, AF_UNSPEC, RtspPortNumber, &RemoteAddr, &AddrLen);
+//        }
+//    }
+//    else {
+//        // We use TCP 47984 and 47989 first here because we know those should always be listening
+//        // on hosts using the standard ports.
+//        //
+//        // TCP 48010 is a last resort because:
+//        // a) it's not always listening and there's a race between listen() on the host and our connect()
+//        // b) it's not used at all by certain host versions which perform RTSP over ENet
+//        err = resolveHostName(serverInfo->address, AF_UNSPEC, 47984, &RemoteAddr, &AddrLen);
+//        if (err != 0) {
+//            err = resolveHostName(serverInfo->address, AF_UNSPEC, 47989, &RemoteAddr, &AddrLen);
+//        }
+//        if (err != 0) {
+//            err = resolveHostName(serverInfo->address, AF_UNSPEC, 48010, &RemoteAddr, &AddrLen);
+//        }
+//    }
     if (err != 0) {
         Limelog("failed: %d\n", err);
         ListenerCallbacks.stageFailed(STAGE_NAME_RESOLUTION, err);
@@ -452,7 +484,7 @@ int LiStartConnection(PSERVER_INFORMATION serverInfo, PSTREAM_CONFIGURATION stre
 
     Limelog("Initializing control stream...");
     ListenerCallbacks.stageStarting(STAGE_CONTROL_STREAM_INIT);
-    err = initializeControlStream();
+    err = initializeControlStream(streamConfig->displayCount);
     if (err != 0) {
         Limelog("failed: %d\n", err);
         ListenerCallbacks.stageFailed(STAGE_CONTROL_STREAM_INIT, err);
@@ -465,7 +497,7 @@ int LiStartConnection(PSERVER_INFORMATION serverInfo, PSTREAM_CONFIGURATION stre
 
     Limelog("Initializing video stream...");
     ListenerCallbacks.stageStarting(STAGE_VIDEO_STREAM_INIT);
-    initializeVideoStream();
+    initializeVideoStream(streamConfig->displayCount);
     stage++;
     LC_ASSERT(stage == STAGE_VIDEO_STREAM_INIT);
     ListenerCallbacks.stageComplete(STAGE_VIDEO_STREAM_INIT);
@@ -494,6 +526,15 @@ int LiStartConnection(PSERVER_INFORMATION serverInfo, PSTREAM_CONFIGURATION stre
 
     Limelog("Starting video stream...");
     ListenerCallbacks.stageStarting(STAGE_VIDEO_STREAM_START);
+//    for(int i=0;i<streamConfig->displayCount&&i<1;i++) { //todo:暂时不支持多个RTSP
+//        err = startVideoStream(renderContext, drFlags,i);
+//        if (err != 0) {
+//            Limelog("Video stream start failed: %d\n", err);
+//            ListenerCallbacks.stageFailed(STAGE_VIDEO_STREAM_START, err);
+//            goto Cleanup;
+//        }
+//    }
+
     err = startVideoStream(renderContext, drFlags);
     if (err != 0) {
         Limelog("Video stream start failed: %d\n", err);
@@ -548,7 +589,10 @@ Cleanup:
 }
 
 const char* LiGetLaunchUrlQueryParameters(void) {
-    // v0 = Video encryption and control stream encryption v2
-    // v1 = RTSP encryption
-    return "&corever=1";
+    //moonlight的原生设计是默认图像和控制流需要加密，如果版本大于或等于1，则rtsp也加密
+    //我们修改成不用加密，或由传输决定是否加密，而不再在逻辑内强制要求加密
+    // 0 = none
+    // 1 = RTSP encryption and Video encryption and control stream encryption v2
+    //    return "&corever=1";
+    return "";
 }

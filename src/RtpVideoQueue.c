@@ -1,5 +1,5 @@
 #include "Limelight-internal.h"
-#include "rswrapper.h"
+#include "rs.h"
 
 #if defined(LC_DEBUG) && !defined(LC_FUZZING)
 // This enables FEC validation mode with a synthetic drop
@@ -22,6 +22,14 @@ void RtpvInitializeQueue(PRTP_VIDEO_QUEUE queue) {
 
     queue->currentFrameNumber = 1;
     queue->multiFecCapable = APP_VERSION_AT_LEAST(7, 1, 431);
+    queue->lastSeenFrame=0;
+    queue->lastGoodFrame=0;
+    queue->firstFrameTimeMs=0;
+    queue->intervalGoodFrameCount=0;
+    queue->intervalTotalFrameCount=0;
+    queue->intervalStartTimeMs=0;
+    queue->lastIntervalLossPercentage=0;
+    queue->lastConnectionStatusUpdate=CONN_STATUS_OKAY;
 }
 
 static void purgeListEntries(PRTPV_QUEUE_LIST list) {
@@ -190,7 +198,7 @@ static bool queuePacket(PRTP_VIDEO_QUEUE queue, PRTPV_QUEUE_ENTRY newEntry, PRTP
     continue
 
 // Returns 0 if the frame is completely constructed
-static int reconstructFrame(PRTP_VIDEO_QUEUE queue) {
+static int reconstructFrame(int trackIndex,PRTP_VIDEO_QUEUE queue) {
     unsigned int totalPackets = queue->bufferDataPackets + queue->bufferParityPackets;
     unsigned int neededPackets = queue->bufferDataPackets;
     int ret;
@@ -215,7 +223,7 @@ static int reconstructFrame(PRTP_VIDEO_QUEUE queue) {
             // NB: We use totalPackets - neededPackets instead of just bufferParityPackets here because we require
             // one extra parity shard for recovery if we're in FEC validation mode.
             if (queue->missingPackets > totalPackets - neededPackets) {
-                notifyFrameLost(queue->currentFrameNumber, true);
+                notifyFrameLost(trackIndex,queue->currentFrameNumber, true);
                 queue->reportedLostFrame = true;
             }
             else {
@@ -328,7 +336,7 @@ static int reconstructFrame(PRTP_VIDEO_QUEUE queue) {
         }
     }
 
-    ret = reed_solomon_decode(rs, packets, marks, totalPackets, receiveSize);
+    ret = reed_solomon_reconstruct(rs, packets, marks, totalPackets, receiveSize);
 
     // We should always provide enough parity to recover the missing data successfully.
     // If this fails, something is probably wrong with our FEC state.
@@ -523,7 +531,7 @@ static void stageCompleteFecBlock(PRTP_VIDEO_QUEUE queue) {
     }
 }
 
-static void submitCompletedFrame(PRTP_VIDEO_QUEUE queue) {
+static void submitCompletedFrame(int trackIndex,PRTP_VIDEO_QUEUE queue) {
     while (queue->completedFecBlockList.count > 0) {
         PRTPV_QUEUE_ENTRY entry = queue->completedFecBlockList.head;
 
@@ -532,7 +540,7 @@ static void submitCompletedFrame(PRTP_VIDEO_QUEUE queue) {
 
         // Submit this packet for decoding. It will own freeing the entry now.
         removeEntryFromList(&queue->completedFecBlockList, entry);
-        queueRtpPacket(entry);
+        queueRtpPacket(trackIndex,entry);
     }
 }
 
@@ -547,8 +555,9 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
     }
 
     // FLAG_EXTENSION is required for all supported versions of GFE.
-    LC_ASSERT_VT(packet->header & FLAG_EXTENSION);
-
+    if(queue->currentFrameNumber==1 && (packet->header & FLAG_EXTENSION)==0) //如果是首个数据包，则丢弃
+        return RTPF_RET_REJECTED;
+    //LC_ASSERT_VT(packet->header & FLAG_EXTENSION);//这里经常会在首个数据包收到一个  没有GFE版本支持的数据包，暂时还不知道原因，但是影响调试，先注释
     int dataOffset = sizeof(*packet);
     if (packet->header & FLAG_EXTENSION) {
         dataOffset += 4; // 2 additional fields
@@ -615,7 +624,7 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
 
                     // Notify the host of the loss of this frame
                     if (!queue->reportedLostFrame) {
-                        notifyFrameLost(queue->currentFrameNumber, false);
+                        notifyFrameLost(packet->ssrc,queue->currentFrameNumber, false);
                         queue->reportedLostFrame = true;
                     }
 
@@ -651,7 +660,7 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
 
             // Notify the host of the loss of this frame
             if (!queue->reportedLostFrame) {
-                notifyFrameLost(queue->currentFrameNumber, false);
+                notifyFrameLost(packet->ssrc,queue->currentFrameNumber, false);
                 queue->reportedLostFrame = true;
             }
 
@@ -678,10 +687,8 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
             // If the frame immediately preceding this one was lost, we may have already
             // reported it using our speculative RFI logic. Don't report it again.
             if (queue->currentFrameNumber + 1 != nvPacket->frameIndex || !queue->reportedLostFrame) {
-                // NB: We only have to notify for the most recent lost frame, since
-                // the depacketizer will report the RFI range starting at the last
-                // frame it saw.
-                notifyFrameLost(nvPacket->frameIndex - 1, false);
+                //我们只需通知最近丢失的帧，因为解包器会报告从它最后看到的帧开始的RFI范围。
+                notifyFrameLost(packet->ssrc, nvPacket->frameIndex - 1, false);
             }
         }
 
@@ -689,7 +696,7 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
 
         // Tell the control stream logic about this frame, even if we don't end up
         // being able to reconstruct a full frame from it.
-        connectionSawFrame(queue->currentFrameNumber);
+        connectionSawFrame(queue);
 
         queue->bufferFirstRecvTimeUs = PltGetMicroseconds();
         queue->bufferLowestSequenceNumber = U16(packet->sequenceNumber - fecIndex);
@@ -769,9 +776,10 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
 
         // Try to submit this frame. If we haven't received enough packets,
         // this will fail and we'll keep waiting.
-        if (reconstructFrame(queue) == 0) {
+        if (reconstructFrame(packet->ssrc, queue) == 0) { //尝试读取完整的帧
+            int trackIndex=packet->ssrc;//packet 稍后销毁
             // Stage the complete FEC block for use once reassembly is complete
-            stageCompleteFecBlock(queue);
+            stageCompleteFecBlock(queue);//将完整的帧加入到已经完成FecBlock的列表中
 
             // stageCompleteFecBlock() should have consumed all pending FEC data
             LC_ASSERT(queue->pendingFecBlockList.head == NULL);
@@ -786,13 +794,13 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
             }
             else {
                 // Submit all FEC blocks to the depacketizer
-                submitCompletedFrame(queue);
+                submitCompletedFrame(trackIndex,queue);
 
                 // submitCompletedFrame() should have consumed all completed FEC data
                 LC_ASSERT(queue->completedFecBlockList.head == NULL);
                 LC_ASSERT(queue->completedFecBlockList.tail == NULL);
                 LC_ASSERT(queue->completedFecBlockList.count == 0);
-
+//                Limelog("解包器【%d】解包完成：%d\n",trackIndex,queue->currentFrameNumber);
                 // Continue to the next frame
                 queue->currentFrameNumber++;
                 queue->multiFecCurrentBlockNumber = 0;

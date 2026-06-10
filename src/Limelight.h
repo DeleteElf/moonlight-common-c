@@ -48,7 +48,7 @@ typedef struct _STREAM_CONFIGURATION {
 
     // FPS of the desired video stream
     int fps;
-
+    int displayCount;
     // Bitrate of the desired video stream (audio adds another ~1 Mbps). This
     // includes error correction data, so the actual encoder bitrate will be
     // about 20% lower when using the standard 20% FEC configuration.
@@ -122,6 +122,8 @@ typedef struct _LENTRY {
 
     // Size of data in bytes (never <= 0)
     int length;
+    //multi tracks support
+    int ssrc;
 
     // Buffer type (listed above, only set for H.264 and HEVC formats)
     int bufferType;
@@ -568,6 +570,8 @@ const char* LiGetStageName(int stage);
 // ENet for the control stream (very old versions), or if the ENet peer is not connected.
 // This function may only be called between LiStartConnection() and LiStopConnection().
 bool LiGetEstimatedRttInfo(uint32_t* estimatedRtt, uint32_t* estimatedRttVariance);
+//获取连接标识数据 用于session_p->config.mlFeatureFlags & ML_FF_SESSION_ID_V1
+uint32_t LiGetConnectData();
 
 // This function queues a relative mouse move event to be sent to the remote server.
 int LiSendMouseMoveEvent(short deltaX, short deltaY);
@@ -588,7 +592,7 @@ int LiSendMouseMoveEvent(short deltaX, short deltaY);
 //
 // For example, if you wanted to directly pass window coordinates as x and y, you would set
 // referenceWidth and referenceHeight to your window width and height.
-int LiSendMousePositionEvent(short x, short y, short referenceWidth, short referenceHeight);
+int LiSendMousePositionEvent(short displayIndex,short x, short y, short referenceWidth, short referenceHeight);
 
 // This function queues a mouse position update event to be sent to the remote server, so
 // all of the limitations of LiSendMousePositionEvent() mentioned above apply here too!
@@ -607,7 +611,7 @@ int LiSendMousePositionEvent(short x, short y, short referenceWidth, short refer
 // This function can be useful when mouse capture is the only feasible way to receive mouse input,
 // like on Android or iOS, and the OS cannot provide raw unaccelerated mouse motion when capturing.
 // Using this function avoids double-acceleration in cases when the client motion is also accelerated.
-int LiSendMouseMoveAsMousePositionEvent(short deltaX, short deltaY, short referenceWidth, short referenceHeight);
+int LiSendMouseMoveAsMousePositionEvent(short displayIndex, short deltaX, short deltaY, short referenceWidth, short referenceHeight);
 
 // Error return value to indicate that the requested functionality is not supported by the host
 #define LI_ERR_UNSUPPORTED -5501
@@ -700,17 +704,24 @@ int LiSendMouseButtonEvent(char action, int button);
 #define MODIFIER_CTRL 0x02
 #define MODIFIER_ALT 0x04
 #define MODIFIER_META 0x08
-int LiSendKeyboardEvent(short keyCode, char keyAction, char modifiers);
+int LiSendKeyboardEvent(short keyCode, char keyAction, char modifiers,short displayIndex);
 
 // Similar to LiSendKeyboardEvent() but allows the client to inform the host that
 // the keycode was not mapped to a standard US English scancode and should be
 // interpreted as-is. This is a Sunshine protocol extension.
 #define SS_KBE_FLAG_NON_NORMALIZED 0x01
-int LiSendKeyboardEvent2(short keyCode, char keyAction, char modifiers, char flags);
-
+int LiSendKeyboardEvent2(short keyCode, char keyAction, char modifiers, char flags,short displayIndex);
 // This function queues an UTF-8 encoded text to be sent to the remote server.
 int LiSendUtf8TextEvent(const char *text, unsigned int length);
 
+/**
+ * @brief LiSendAudioStreamEvent send data to remote host
+ * @param data encoded data,eg. opus encoded data
+ * @param length data`s length
+ * @param packetType rtpPacket type,eg. 0x61
+ * @param ssrc rtpPacket ssrc,eg. 0x12345678
+*/
+int LiSendAudioStreamEvent(const char* data, unsigned int length,unsigned  int packetType,unsigned int ssrc);
 // Button flags
 #define A_FLAG     0x1000
 #define B_FLAG     0x2000
@@ -861,7 +872,7 @@ int LiFindExternalAddressIP4(const char* stunServer, unsigned short stunPort, un
 
 // Returns the number of queued video frames ready for delivery. Only relevant
 // if CAPABILITY_DIRECT_SUBMIT is not set for the video renderer.
-int LiGetPendingVideoFrames(void);
+int LiGetPendingVideoFrames(int trackIndex);
 
 // Returns the number of queued audio frames ready for delivery. Only relevant
 // if CAPABILITY_DIRECT_SUBMIT is not set for the audio renderer. For most uses,
@@ -901,27 +912,26 @@ typedef struct _RTP_VIDEO_STATS {
     uint32_t packetCountFecInvalid;    // invalid FEC packet
 } RTP_VIDEO_STATS, *PRTP_VIDEO_STATS;
 
-const RTP_VIDEO_STATS* LiGetRTPVideoStats(void);
+const RTP_VIDEO_STATS* LiGetRTPVideoStats(int trackIndex);
 
 // Port index flags for use with LiGetPortFromPortFlagIndex() and LiGetProtocolFromPortFlagIndex()
 #define ML_PORT_INDEX_TCP_47984 0
 #define ML_PORT_INDEX_TCP_47989 1
-#define ML_PORT_INDEX_TCP_48010 2
-#define ML_PORT_INDEX_UDP_47998 8
-#define ML_PORT_INDEX_UDP_47999 9
-#define ML_PORT_INDEX_UDP_48000 10
-#define ML_PORT_INDEX_UDP_48010 11
+#define ML_PORT_INDEX_TCP_48010 2 //48010
+
+#define ML_PORT_INDEX_UDP_CONTROL 8 //48000
+#define ML_PORT_INDEX_UDP_AUDIO 9 //48000
+#define ML_PORT_INDEX_UDP_VIDEO 10 //48000
 
 // Port flags for use with LiTestClientConnectivity()
 #define ML_PORT_FLAG_ALL       0xFFFFFFFF
 #define ML_PORT_FLAG_TCP_47984 0x0001
 #define ML_PORT_FLAG_TCP_47989 0x0002
 #define ML_PORT_FLAG_TCP_48010 0x0004
-#define ML_PORT_FLAG_UDP_47998 0x0100
-#define ML_PORT_FLAG_UDP_47999 0x0200
-#define ML_PORT_FLAG_UDP_48000 0x0400
-#define ML_PORT_FLAG_UDP_48010 0x0800
 
+#define ML_PORT_FLAG_UDP_CONTROL 0x0100
+#define ML_PORT_FLAG_UDP_AUDIO 0x0200
+#define ML_PORT_FLAG_UDP_VIDEO  0x0400
 // Returns the port flags that correspond to ports involved in a failing connection stage, or
 // connection termination error.
 //
@@ -962,11 +972,11 @@ unsigned int LiTestClientConnectivity(const char* testServer, unsigned short ref
 //
 // In order to safely use these functions, you must set CAPABILITY_PULL_RENDERER on the video decoder.
 typedef void* VIDEO_FRAME_HANDLE;
-bool LiWaitForNextVideoFrame(VIDEO_FRAME_HANDLE* frameHandle, PDECODE_UNIT* decodeUnit);
-bool LiPollNextVideoFrame(VIDEO_FRAME_HANDLE* frameHandle, PDECODE_UNIT* decodeUnit);
-bool LiPeekNextVideoFrame(PDECODE_UNIT* decodeUnit);
-void LiWakeWaitForVideoFrame(void);
-void LiCompleteVideoFrame(VIDEO_FRAME_HANDLE handle, int drStatus);
+bool LiWaitForNextVideoFrame(VIDEO_FRAME_HANDLE* frameHandle, PDECODE_UNIT* decodeUnit,int trackIndex);
+bool LiPollNextVideoFrame(VIDEO_FRAME_HANDLE* frameHandle, PDECODE_UNIT* decodeUnit,int trackIndex);
+bool LiPeekNextVideoFrame(PDECODE_UNIT* decodeUnit,int trackIndex);
+void LiWakeWaitForVideoFrame(int trackIndex);
+void LiCompleteVideoFrame(VIDEO_FRAME_HANDLE handle, int drStatus,int trackIndex);
 
 // This function returns the last reported HDR mode from the host PC.
 // See ConnListenerSetHdrMode() for more details.
@@ -1005,12 +1015,52 @@ bool LiGetHdrMetadata(PSS_HDR_METADATA metadata);
 // the prior frame. Rather than wait for a new frame and return DR_NEED_IDR for that one, they can just
 // call this API instead. Note that this function does not guarantee that the *next* frame will be an IDR
 // frame, just that an IDR frame will arrive soon.
-void LiRequestIdrFrame(void);
+void LiRequestIdrFrame(int trackIndex);
 
 // This function returns any extended feature flags supported by the host.
 #define LI_FF_PEN_TOUCH_EVENTS        0x01 // LiSendTouchEvent()/LiSendPenEvent() supported
 #define LI_FF_CONTROLLER_TOUCH_EVENTS 0x02 // LiSendControllerTouchEvent() supported
 uint32_t LiGetHostFeatureFlags(void);
+
+typedef struct _BufferPacket{
+    unsigned long len;
+    char* buf;
+} BufferPacket,*LPBufferPacket;
+
+// #ifndef SOCKET_PROXY_SUPPORT
+// #define SOCKET_PROXY_SUPPORT
+// proxy support
+// return int value,in send is error code,in receive is receive length!
+// byte data,length,channelId,dataType(-1 is invalid)
+typedef int (*NetworkSendCallback)(const void*,int,int,int);
+// BufferPacket* buffer,channelId
+typedef int (*NetworkReceiveCallback)(BufferPacket*,int);
+typedef int (*NetworkStartCallback)(int,int);
+typedef int (*NetworkStopCallback)(int);
+
+typedef enum _SocketChannelType
+{
+    SocketChannelControl=0,
+    SocketChannelAudio,
+    SocketChannelVideo
+} SocketChannelType;
+
+extern NetworkStartCallback networkChannelStartCallback;
+extern NetworkStopCallback networkChannelStopCallback;
+extern NetworkSendCallback networkSendCallback;
+extern NetworkReceiveCallback networkReceiveCallback;
+
+void LiSetNetworkChannelStart(NetworkStartCallback callback);
+void LiSetNetworkChannelStop(NetworkStopCallback callback);
+void LiSetNetworkSend(NetworkSendCallback callback);
+void LiSetNetworkReceive(NetworkReceiveCallback callback);
+
+// #endif
+
+// rtsp http protocol support
+typedef int (*HttpRtspMessageCallback)(char*,BufferPacket*,BufferPacket*);
+extern HttpRtspMessageCallback httpRtspMessageCallback;
+void LiSetHttpRtspMessage(HttpRtspMessageCallback callback);
 
 #ifdef __cplusplus
 }

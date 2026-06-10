@@ -11,8 +11,6 @@
 #include "RtpVideoQueue.h"
 #include "ByteBuffer.h"
 
-#include <enet/enet.h>
-
 // Common globals
 extern char* RemoteAddrString;
 extern struct sockaddr_storage RemoteAddr;
@@ -35,8 +33,6 @@ extern bool ReferenceFrameInvalidationSupported;
 
 extern uint16_t RtspPortNumber;
 extern uint16_t ControlPortNumber;
-extern uint16_t AudioPortNumber;
-extern uint16_t VideoPortNumber;
 
 extern SS_PING AudioPingPayload;
 extern SS_PING VideoPingPayload;
@@ -46,8 +42,6 @@ extern uint32_t SunshineFeatureFlags;
 
 // Encryption flags shared by Sunshine and Moonlight in RTSP
 #define SS_ENC_CONTROL_V2 0x01
-#define SS_ENC_VIDEO 0x02
-#define SS_ENC_AUDIO 0x04
 
 extern uint32_t EncryptionFeaturesSupported;
 extern uint32_t EncryptionFeaturesRequested;
@@ -101,8 +95,14 @@ extern uint32_t EncryptionFeaturesEnabled;
 // Internal macro for checking the magic byte of the audio configuration value
 #define MAGIC_BYTE_FROM_AUDIO_CONFIG(x) ((x) & 0xFF)
 
-int serviceEnetHost(ENetHost* client, ENetEvent* event, enet_uint32 timeoutMs);
-int gracefullyDisconnectEnetPeer(ENetHost* host, ENetPeer* peer, enet_uint32 lingerTimeoutMs);
+typedef struct _QUEUED_REFERENCE_FRAME_CONTROL {
+    int trackIndex;
+    uint32_t startFrame;
+    uint32_t endFrame;
+    bool invalidate; // true: RFI(startFrame, endFrame); false: LTR_ACK(startFrame)
+    LINKED_BLOCKING_QUEUE_ENTRY entry;
+} QUEUED_REFERENCE_FRAME_CONTROL, *PQUEUED_REFERENCE_FRAME_CONTROL;
+
 int extractVersionQuadFromString(const char* string, int* quad);
 bool isReferenceFrameInvalidationSupportedByDecoder(void);
 bool isReferenceFrameInvalidationEnabled(void);
@@ -112,32 +112,34 @@ void fixupMissingCallbacks(PDECODER_RENDERER_CALLBACKS* drCallbacks, PAUDIO_REND
     PCONNECTION_LISTENER_CALLBACKS* clCallbacks);
 void setRecorderCallbacks(PDECODER_RENDERER_CALLBACKS drCallbacks, PAUDIO_RENDERER_CALLBACKS arCallbacks);
 
-char* getSdpPayloadForStreamConfig(int rtspClientVersion, int* length);
+char* getSdpPayloadForStreamConfig(int rtspClientVersion, int* length,int displayCount);
 
-int initializeControlStream(void);
+int initializeControlStream(int videoTrackCount);
 int startControlStream(void);
 int stopControlStream(void);
 void destroyControlStream(void);
-void connectionDetectedFrameLoss(uint32_t startFrame, uint32_t endFrame);
-void connectionReceivedCompleteFrame(uint32_t frameIndex, bool frameIsLTR);
-void connectionSawFrame(uint32_t frameIndex);
+int getLastSeenFrame(int trackIndex);
+int getLastGoodFrame(int trackIndex);
+void setLastGoodFrame(int trackIndex,int frameIndex);
+void connectionDetectedFrameLoss(int trackIndex, uint32_t startFrame, uint32_t endFrame);
+void connectionReceivedCompleteFrame(int trackIndex,uint32_t frameIndex, bool frameIsLTR);
+void connectionSawFrame(PRTP_VIDEO_QUEUE queue);
 void connectionSendFrameFecStatus(PSS_FRAME_FEC_STATUS fecStatus);
-int sendInputPacketOnControlStream(unsigned char* data, int length, uint8_t channelId, uint32_t flags, bool moreData);
-void flushInputOnControlStream(void);
-bool isControlDataInTransit(void);
+int sendInputPacketOnControlStream(unsigned char* data, int length);
 
 int performRtspHandshake(PSERVER_INFORMATION serverInfo);
-
-void initializeVideoDepacketizer(int pktSize);
+//初始化解包器
+void initializeVideoDepacketizer(int pktSize,int trackCount);
+//销毁解包器
 void destroyVideoDepacketizer(void);
-void queueRtpPacket(PRTPV_QUEUE_ENTRY queueEntry);
+void queueRtpPacket(int trackIndex,PRTPV_QUEUE_ENTRY queueEntry);
 void stopVideoDepacketizer(void);
-void requestDecoderRefresh(void);
-void notifyFrameLost(unsigned int frameNumber, bool speculative);
+void requestDecoderRefresh(int trackIndex);
+void notifyFrameLost(int trackIndex,unsigned int frameNumber, bool speculative);
 
-void initializeVideoStream(void);
+void initializeVideoStream(int displayCount);
 void destroyVideoStream(void);
-void notifyKeyFrameReceived(void);
+void notifyKeyFrameReceived(int displayIndex);
 int startVideoStream(void* rendererContext, int drFlags);
 void stopVideoStream(void);
 

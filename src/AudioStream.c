@@ -1,7 +1,5 @@
 #include "Limelight-internal.h"
 
-static SOCKET rtpSocket = INVALID_SOCKET;
-
 static LINKED_BLOCKING_QUEUE packetQueue;
 static RTP_AUDIO_QUEUE rtpAudioQueue;
 
@@ -37,13 +35,6 @@ typedef struct _QUEUED_AUDIO_PACKET {
 
 static void AudioPingThreadProc(void* context) {
     char legacyPingData[] = { 0x50, 0x49, 0x4E, 0x47 };
-    LC_SOCKADDR saddr;
-
-    LC_ASSERT(AudioPortNumber != 0);
-
-    memcpy(&saddr, &RemoteAddr, sizeof(saddr));
-    SET_PORT(&saddr, AudioPortNumber);
-
     // We do not check for errors here. Socket errors will be handled
     // on the read-side in ReceiveThreadProc(). This avoids potential
     // issues related to receiving ICMP port unreachable messages due
@@ -53,11 +44,14 @@ static void AudioPingThreadProc(void* context) {
         if (AudioPingPayload.payload[0] != 0) {
             pingCount++;
             AudioPingPayload.sequenceNumber = BE32(pingCount);
-
-            sendto(rtpSocket, (char*)&AudioPingPayload, sizeof(AudioPingPayload), 0, (struct sockaddr*)&saddr, AddrLen);
+            if(networkSendCallback!=NULL){
+                networkSendCallback((char*) &AudioPingPayload,sizeof(AudioPingPayload),SocketChannelAudio,-1);
+            }
         }
         else {
-            sendto(rtpSocket, legacyPingData, sizeof(legacyPingData), 0, (struct sockaddr*)&saddr, AddrLen);
+            if(networkSendCallback!=NULL){
+                networkSendCallback(legacyPingData, sizeof(legacyPingData),SocketChannelAudio,-1);
+            }
         }
 
         PltSleepMsInterruptible(&udpPingThread, 500);
@@ -89,14 +83,6 @@ int initializeAudioStream(void) {
 // and will use the well known audio port instead.
 int notifyAudioPortNegotiationComplete(void) {
     LC_ASSERT(!pingThreadStarted);
-    LC_ASSERT(AudioPortNumber != 0);
-
-    // For GFE 3.22 compatibility, we must start the audio ping thread before the RTSP handshake.
-    // It will not reply to our RTSP PLAY request until the audio ping has been received.
-    rtpSocket = bindUdpSocket(RemoteAddr.ss_family, &LocalAddr, AddrLen, 0, SOCK_QOS_TYPE_AUDIO);
-    if (rtpSocket == INVALID_SOCKET) {
-        return LastSocketFail();
-    }
 
     // We may receive audio before our threads are started, but that's okay. We'll
     // drop the first 1 second of audio packets to catch up with the backlog.
@@ -124,16 +110,11 @@ static void freePacketList(PLINKED_BLOCKING_QUEUE_ENTRY entry) {
 
 // Tear down the audio stream once we're done with it
 void destroyAudioStream(void) {
-    if (rtpSocket != INVALID_SOCKET) {
-        if (pingThreadStarted) {
-            PltInterruptThread(&udpPingThread);
-            PltJoinThread(&udpPingThread);
-        }
-
-        closeSocket(rtpSocket);
-        rtpSocket = INVALID_SOCKET;
+    if (pingThreadStarted) {
+        PltInterruptThread(&udpPingThread);
+        PltJoinThread(&udpPingThread);
+        pingThreadStarted=false;
     }
-
     PltDestroyCryptoContext(audioDecryptionCtx);
     freePacketList(LbqDestroyLinkedBlockingQueue(&packetQueue));
     RtpaCleanupQueue(&rtpAudioQueue);
@@ -240,21 +221,11 @@ static void AudioReceiveThreadProc(void* context) {
     PRTP_PACKET rtp;
     PQUEUED_AUDIO_PACKET packet;
     int queueStatus;
-    bool useSelect;
     uint32_t packetsToDrop;
     int waitingForAudioMs;
 
     packet = NULL;
     packetsToDrop = 500 / AudioPacketDuration;
-
-    if (setNonFatalRecvTimeoutMs(rtpSocket, UDP_RECV_POLL_TIMEOUT_MS) < 0) {
-        // SO_RCVTIMEO failed, so use select() to wait
-        useSelect = true;
-    }
-    else {
-        // SO_RCVTIMEO timeout set for recv()
-        useSelect = false;
-    }
 
     waitingForAudioMs = 0;
     while (!PltIsThreadInterrupted(&receiveThread)) {
@@ -266,8 +237,21 @@ static void AudioReceiveThreadProc(void* context) {
                 break;
             }
         }
-
-        packet->header.size = recvUdpSocket(rtpSocket, &packet->data[0], MAX_PACKET_SIZE, useSelect);
+        if(networkReceiveCallback!=NULL){
+            BufferPacket bufferPacket;
+            bufferPacket.len=MAX_PACKET_SIZE;
+            bufferPacket.buf=&packet->data[0];
+            networkReceiveCallback(&bufferPacket,SocketChannelAudio);
+            if (bufferPacket.len<=0) {
+                Limelog("接收音频数据失败\n", (int)LastSocketError());
+                ListenerCallbacks.connectionTerminated(LastSocketFail());
+                break;
+            }
+            packet->header.size=bufferPacket.len;
+        }else {
+            Limelog("未设置有效的networkReceiveCallback");
+            break;
+        }
         if (packet->header.size < 0) {
             Limelog("Audio Receive: recvUdpSocket() failed: %d\n", (int)LastSocketError());
             ListenerCallbacks.connectionTerminated(LastSocketFail());
@@ -275,7 +259,7 @@ static void AudioReceiveThreadProc(void* context) {
         }
         else if (packet->header.size == 0) {
             // Receive timed out; try again
-
+            
             if (!receivedDataFromPeer) {
                 waitingForAudioMs += UDP_RECV_POLL_TIMEOUT_MS;
             }
@@ -299,8 +283,6 @@ static void AudioReceiveThreadProc(void* context) {
             Limelog("Received first audio packet after %d ms\n", waitingForAudioMs);
 
             if (firstReceiveTime != 0) {
-                // XXX firstReceiveTime is never set here...
-                // We're already dropping 500ms of audio so this probably doesn't matter
                 packetsToDrop += (uint32_t)(PltGetMillis() - firstReceiveTime) / AudioPacketDuration;
             }
 
@@ -368,7 +350,7 @@ static void AudioReceiveThreadProc(void* context) {
                         free(queuedPacket);
                     }
                 }
-
+                
                 // Break on exit
                 if (queuedPacket != NULL) {
                     break;
@@ -376,7 +358,7 @@ static void AudioReceiveThreadProc(void* context) {
             }
         }
     }
-
+    
     if (packet != NULL) {
         free(packet);
     }
@@ -407,12 +389,18 @@ void stopAudioStream(void) {
     AudioCallbacks.stop();
 
     PltInterruptThread(&receiveThread);
-    if ((AudioCallbacks.capabilities & CAPABILITY_DIRECT_SUBMIT) == 0) {
+    if ((AudioCallbacks.capabilities & CAPABILITY_DIRECT_SUBMIT) == 0) {        
         // Signal threads waiting on the LBQ
         LbqSignalQueueShutdown(&packetQueue);
         PltInterruptThread(&decoderThread);
     }
-
+     if (networkChannelStopCallback != NULL) {
+         int ret=networkChannelStopCallback(SocketChannelAudio);
+         // return 0; //不再直接返回，仍要执行注销 线程逻辑
+         if(ret>0){
+             //考虑打印错误
+         }
+     }
     PltJoinThread(&receiveThread);
     if ((AudioCallbacks.capabilities & CAPABILITY_DIRECT_SUBMIT) == 0) {
         PltJoinThread(&decoderThread);
@@ -449,7 +437,6 @@ int startAudioStream(void* audioContext, int arFlags) {
     err = PltCreateThread("AudioRecv", AudioReceiveThreadProc, NULL, &receiveThread);
     if (err != 0) {
         AudioCallbacks.stop();
-        closeSocket(rtpSocket);
         AudioCallbacks.cleanup();
         return err;
     }
@@ -460,7 +447,6 @@ int startAudioStream(void* audioContext, int arFlags) {
             AudioCallbacks.stop();
             PltInterruptThread(&receiveThread);
             PltJoinThread(&receiveThread);
-            closeSocket(rtpSocket);
             AudioCallbacks.cleanup();
             return err;
         }
@@ -475,6 +461,29 @@ int LiGetPendingAudioFrames(void) {
 
 int LiGetPendingAudioDuration(void) {
     return LiGetPendingAudioFrames() * AudioPacketDuration;
+}
+
+int sequenceNumber=0;
+int LiSendAudioStreamEvent(const char* data, unsigned int length,unsigned  int packetType,unsigned int ssrc){
+
+    RTP_PACKET packet;
+    packet.header= 0x00; // flags (1 byte)
+    packet.packetType=  packetType; // packetType (1 byte) eg. custom OPUS encoder type
+    packet.sequenceNumber=(short) (sequenceNumber++ & 0xFFFF); // sequenceNumber (2 bytes)
+    uint64_t currentTime = PltGetMillis();
+    packet.timestamp=(int)(currentTime & 0xFFFFFFFF);// timestamp (4 bytes)
+    packet.ssrc=ssrc;  // ssrc (4 bytes) - Synchronization Source Identifier
+
+    int size=sizeof(packet);
+    char* buffer=(char*)malloc(size+length);
+    memcpy(buffer,&packet,size);
+    memcpy(buffer+size,data,length);
+
+    if(networkSendCallback!=NULL){
+        networkSendCallback(buffer,size+length,SocketChannelAudio,-1);
+        return 0;
+    }
+    return -1;
 }
 
 const RTP_AUDIO_STATS* LiGetRTPAudioStats(void) {
