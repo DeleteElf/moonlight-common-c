@@ -442,11 +442,8 @@ static void inputSendThreadProc(void* context) {
             holder->packet.mouseMoveAbs.x = BE16(currentAbsoluteMouseState.x);
             holder->packet.mouseMoveAbs.y = BE16(currentAbsoluteMouseState.y);
 
-            // There appears to be a rounding error in GFE's scaling calculation which prevents
-            // the cursor from reaching the far edge of the screen when streaming at smaller
-            // resolutions with a higher desktop resolution (like streaming 720p with a desktop
-            // resolution of 1080p, or streaming 720p/1080p with a desktop resolution of 4K).
-            // Subtracting one from the reference dimensions seems to work around this issue.
+            // 在GFE的缩放计算中似乎存在舍入误差，当以较低的分辨率进行流式传输时（如以1080p的桌面分辨率流式传输720p，
+            // 或以4K的桌面分辨率流式传输720p/1080p），该误差会阻止光标到达屏幕的远端。从参考尺寸中减去1似乎可以解决这个问题。
             holder->packet.mouseMoveAbs.width = BE16(currentAbsoluteMouseState.width - 1);
             holder->packet.mouseMoveAbs.height = BE16(currentAbsoluteMouseState.height - 1);
 
