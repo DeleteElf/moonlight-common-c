@@ -856,7 +856,7 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
     // 2. The audio decoder has not declared that it is slow
     // 3. The stream is either local or not surround sound (to prevent MTU issues over the Internet)
     LC_ASSERT(StreamConfig.streamingRemotely != STREAM_CFG_AUTO);
-    if(strstr(serverInfo->rtspSessionUrl,"http")){//如果使用http的rtsp协议
+    if(serverInfo->rtspSessionUrl && strstr(serverInfo->rtspSessionUrl,"http")){//如果使用http的rtsp协议
       parseUrlAddrFromRtspUrlString(serverInfo->rtspSessionUrl, urlAddr, sizeof(urlAddr));
       PltSafeStrcpy(rtspTargetUrl, sizeof(rtspTargetUrl), serverInfo->rtspSessionUrl);
     }else {
