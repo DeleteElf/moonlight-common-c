@@ -132,7 +132,7 @@ static void cleanupFrameState(PVIDEO_DEPACKETIZER depacketizer) {
 
 // Cleanup frame state and set that we're waiting for an IDR Frame
 static void dropFrameState(PVIDEO_DEPACKETIZER depacketizer) {
-    Limelog("正在处理丢包事件！！！=====================>%d\n",depacketizer->trackIndex);
+    Limelog("正在处理丢包事件！！！=====================>[%d]，下一帧[%d]\n",depacketizer->trackIndex,depacketizer->nextFrameNumber);
 
     // This may only be called at frame boundaries
     LC_ASSERT(!depacketizer->decodingFrame);
