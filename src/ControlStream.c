@@ -397,6 +397,37 @@ void connectionSawFrame(PRTP_VIDEO_QUEUE queue) {
     queue->lastSeenFrame = frameIndex;
 }
 
+//todo:这个方面2026年6月24日从官方同步，还未验证作用，ctlSock我们这里是没有的，因为已经剥离了通讯层
+// Reads an NV control stream packet from the TCP connection
+// static PNVCTL_TCP_PACKET_HEADER readNvctlPacketTcp(void) {
+//     NVCTL_TCP_PACKET_HEADER staticHeader;
+//     PNVCTL_TCP_PACKET_HEADER fullPacket;
+//     SOCK_RET err;
+
+//     err = recv(ctlSock, (char*)&staticHeader, sizeof(staticHeader), 0);
+//     if (err != sizeof(staticHeader)) {
+//         return NULL;
+//     }
+
+//     staticHeader.type = LE16(staticHeader.type);
+//     staticHeader.payloadLength = LE16(staticHeader.payloadLength);
+
+//     fullPacket = (PNVCTL_TCP_PACKET_HEADER)malloc(staticHeader.payloadLength + sizeof(staticHeader));
+//     if (fullPacket == NULL) {
+//         return NULL;
+//     }
+
+//     memcpy(fullPacket, &staticHeader, sizeof(staticHeader));
+//     if (staticHeader.payloadLength != 0) {
+//         err = recv(ctlSock, (char*)(fullPacket + 1), staticHeader.payloadLength, 0);
+//         if (err != staticHeader.payloadLength) {
+//             free(fullPacket);
+//             return NULL;
+//         }
+//     }
+
+//     return fullPacket;
+// }
 
 static bool encryptControlMessage(PNVCTL_ENCRYPTED_PACKET_HEADER encPacket, PNVCTL_ENET_PACKET_HEADER_V2 packet) {
     unsigned char iv[16] = { 0 };
@@ -730,288 +761,6 @@ static void queueAsyncCallback(PNVCTL_ENET_PACKET_HEADER_V1 ctlHdr, int packetLe
         free(queuedCb);
     }
 }
-//
-//static void controlReceiveThreadFunc(void* context) {
-//    int err;
-//
-//    // This is only used for ENet
-//    if (AppVersionQuad[0] < 5) {
-//        return;
-//    }
-//
-//    while (!PltIsThreadInterrupted(&controlReceiveThread)) {
-//        ENetEvent event;
-//        enet_uint32 waitTimeMs;
-//
-//        PltLockMutex(&enetMutex);
-//
-//        // Poll for new packets and process retransmissions
-//        err = serviceEnetHost(client, &event, 0);
-//
-//        // Compute the next time we need to wake up to handle
-//        // the RTO timer or a ping.
-//        if (err == 0) {
-//            if (ENET_TIME_LESS(peer->nextTimeout, client->serviceTime)) {
-//                // This can happen when we have no unacked reliable messages
-//                waitTimeMs = 10;
-//            }
-//            else {
-//                // We add 1 ms just to ensure we're unlikely to undershoot the sleep() and have to
-//                // do a tiny sleep for another iteration before the timeout is ready to be serviced.
-//                waitTimeMs = ENET_TIME_DIFFERENCE(peer->nextTimeout, client->serviceTime) + 1;
-//            }
-//
-//            // Ensure we don't sleep through a ping
-//            if (peer->lastReceiveTime && peer->lastSendTime) {
-//                enet_uint32 timeSinceLastRecv = ENET_TIME_DIFFERENCE(client->serviceTime, peer->lastReceiveTime);
-//                enet_uint32 timeSinceLastSend = ENET_TIME_DIFFERENCE(client->serviceTime, peer->lastSendTime);
-//                enet_uint32 timeSinceLastComm = MIN(timeSinceLastSend, timeSinceLastRecv);
-//
-//                if (timeSinceLastComm >= peer->pingInterval) {
-//                    // Ping is due now for this peer
-//                    waitTimeMs = 0;
-//                } else {
-//                    waitTimeMs = MIN(waitTimeMs, peer->pingInterval - timeSinceLastComm);
-//                }
-//            }
-//            else {
-//                waitTimeMs = MIN(waitTimeMs, peer->pingInterval);
-//            }
-//        }
-//
-//        PltUnlockMutex(&enetMutex);
-//
-//        if (err == 0) {
-//            // Handle a pending disconnect after unsuccessfully polling
-//            // for new events to handle.
-//            if (disconnectPending) {
-//                PltLockMutex(&enetMutex);
-//                // Wait 100 ms for pending receives after a disconnect and
-//                // 1 second for the pending disconnect to be processed after
-//                // removing the intercept callback.
-//                err = serviceEnetHost(client, &event, client->intercept ? 100 : 1000);
-//                if (err == 0) {
-//                    if (client->intercept) {
-//                        // Now that no pending receive events remain, we can
-//                        // remove our intercept hook and allow the server's
-//                        // disconnect to be processed as expected. We will wait
-//                        // 1 second for this disconnect to be processed before
-//                        // we tear down the connection anyway.
-//                        client->intercept = NULL;
-//                        PltUnlockMutex(&enetMutex);
-//                        continue;
-//                    }
-//                    else {
-//                        // The 1 second timeout has expired with no disconnect event
-//                        // retransmission after the first notification. We can only
-//                        // assume the server died tragically, so go ahead and tear down.
-//                        PltUnlockMutex(&enetMutex);
-//                        Limelog("Disconnect event timeout expired\n");
-//                        ListenerCallbacks.connectionTerminated(-1);
-//                        return;
-//                    }
-//                }
-//                else {
-//                    PltUnlockMutex(&enetMutex);
-//                }
-//            }
-//            else {
-//                // No events ready - wait for readability or a local RTO timer to expire
-//                enet_uint32 condition = ENET_SOCKET_WAIT_RECEIVE;
-//                enet_socket_wait(client->socket, &condition, waitTimeMs);
-//                continue;
-//            }
-//        }
-//
-//        if (err < 0) {
-//            // The error from serviceEnetHost() should be propagated via LastSocketError()
-//            LC_ASSERT(err == -1);
-//
-//            err = LastSocketFail();
-//            Limelog("Control stream connection failed: %d\n", err);
-//            ListenerCallbacks.connectionTerminated(err);
-//            return;
-//        }
-//
-//        if (event.type == ENET_EVENT_TYPE_RECEIVE) {
-//            PNVCTL_ENET_PACKET_HEADER_V1 ctlHdr;
-//            int packetLength;
-//
-//            if (event.packet->dataLength < sizeof(*ctlHdr)) {
-//                Limelog("Discarding runt control packet: %d < %d\n", event.packet->dataLength, (int)sizeof(*ctlHdr));
-//                enet_packet_destroy(event.packet);
-//                continue;
-//            }
-//
-//            ctlHdr = (PNVCTL_ENET_PACKET_HEADER_V1)event.packet->data;
-//            ctlHdr->type = LE16(ctlHdr->type);
-//
-//            if (encryptedControlStream) {
-//                // V2 headers can be interpreted as V1 headers for the purpose of examining type,
-//                // so this check is safe.
-//                if (ctlHdr->type == 0x0001) {
-//                    PNVCTL_ENCRYPTED_PACKET_HEADER encHdr;
-//
-//                    if (event.packet->dataLength < sizeof(NVCTL_ENCRYPTED_PACKET_HEADER)) {
-//                        Limelog("Discarding runt encrypted control packet: %d < %d\n", event.packet->dataLength, (int)sizeof(NVCTL_ENCRYPTED_PACKET_HEADER));
-//                        enet_packet_destroy(event.packet);
-//                        continue;
-//                    }
-//
-//                    // encryptedHeaderType is already byteswapped by aliasing through ctlHdr above
-//                    encHdr = (PNVCTL_ENCRYPTED_PACKET_HEADER)event.packet->data;
-//                    encHdr->length = LE16(encHdr->length);
-//                    encHdr->seq = LE32(encHdr->seq);
-//
-//                    ctlHdr = NULL;
-//                    packetLength = (int)event.packet->dataLength;
-//                    if (!decryptControlMessageToV1(encHdr, packetLength, &ctlHdr, &packetLength)) {
-//                        Limelog("Failed to decrypt control packet of size %d\n", event.packet->dataLength);
-//                        enet_packet_destroy(event.packet);
-//                        continue;
-//                    }
-//
-//                    // We need to byteswap the unsealed header too
-//                    ctlHdr->type = LE16(ctlHdr->type);
-//                }
-//                else {
-//                    LC_ASSERT_VT(false);
-//                    Limelog("Discarding unencrypted packet on encrypted control stream: %04x\n", ctlHdr->type);
-//                    enet_packet_destroy(event.packet);
-//                    continue;
-//                }
-//            }
-//            else {
-//                // Take ownership of the packet data directly for the non-encrypted case
-//                packetLength = (int)event.packet->dataLength;
-//                event.packet->data = NULL;
-//            }
-//
-//            // We're done with the packet struct
-//            enet_packet_destroy(event.packet);
-//
-//            // All below codepaths must free ctlHdr!!!
-//
-//            // Process HDR data immediately to update global HDR enabled state and HDR metadata.
-//            // The actual client callback will be invoked in the async callback thread.
-//            if (ctlHdr->type == packetTypes[IDX_HDR_INFO]) {
-//                BYTE_BUFFER bb;
-//                uint8_t enableByte;
-//
-//                BbInitializeWrappedBuffer(&bb, (char*)ctlHdr, sizeof(*ctlHdr), packetLength - sizeof(*ctlHdr), BYTE_ORDER_LITTLE);
-//
-//                BbGet8(&bb, &enableByte);
-//                if (IS_SUNSHINE()) {
-//                    // Zero the metadata buffer to properly handle older servers if we have to add new fields
-//                    memset(&hdrMetadata, 0, sizeof(hdrMetadata));
-//
-//                    // Sunshine sends HDR metadata in this message too
-//                    for (int i = 0; i < 3; i++) {
-//                        BbGet16(&bb, &hdrMetadata.displayPrimaries[i].x);
-//                        BbGet16(&bb, &hdrMetadata.displayPrimaries[i].y);
-//                    }
-//                    BbGet16(&bb, &hdrMetadata.whitePoint.x);
-//                    BbGet16(&bb, &hdrMetadata.whitePoint.y);
-//                    BbGet16(&bb, &hdrMetadata.maxDisplayLuminance);
-//                    BbGet16(&bb, &hdrMetadata.minDisplayLuminance);
-//                    BbGet16(&bb, &hdrMetadata.maxContentLightLevel);
-//                    BbGet16(&bb, &hdrMetadata.maxFrameAverageLightLevel);
-//                    BbGet16(&bb, &hdrMetadata.maxFullFrameLuminance);
-//                }
-//
-//                hdrEnabled = (enableByte != 0);
-//            }
-//
-//            // Process client callbacks in a separate thread
-//            if (needsAsyncCallback(ctlHdr->type)) {
-//                queueAsyncCallback(ctlHdr, packetLength);
-//            }
-//            else if (ctlHdr->type == packetTypes[IDX_TERMINATION]) {
-//                BYTE_BUFFER bb;
-//                uint32_t terminationErrorCode;
-//                uint32_t lastSeenFrame=getLastSeenFrame(0);//todo:这里需要看看 怎么传递 trackIndex进来，目前还没跟踪到代码执行点
-//                if (packetLength >= 6) {
-//                    // This is the extended termination message which contains a full HRESULT
-//                    BbInitializeWrappedBuffer(&bb, (char*)ctlHdr, sizeof(*ctlHdr), packetLength - sizeof(*ctlHdr), BYTE_ORDER_BIG);
-//                    BbGet32(&bb, &terminationErrorCode);
-//
-//                    Limelog("Server notified termination reason: 0x%08x\n", terminationErrorCode);
-//
-//                    // Normalize the termination error codes for specific values we recognize
-//                    switch (terminationErrorCode) {
-//                    case 0x800e9403: // NVST_DISCONN_SERVER_VIDEO_ENCODER_CONVERT_INPUT_FRAME_FAILED
-//                        terminationErrorCode = ML_ERROR_FRAME_CONVERSION;
-//                        break;
-//                    case 0x800e9302: // NVST_DISCONN_SERVER_VFP_PROTECTED_CONTENT
-//                        terminationErrorCode = ML_ERROR_PROTECTED_CONTENT;
-//                        break;
-//                    case 0x80030023: // NVST_DISCONN_SERVER_TERMINATED_CLOSED
-//                        if (lastSeenFrame != 0) {
-//                            // Pass error code 0 to notify the client that this was not an error
-//                            terminationErrorCode = ML_ERROR_GRACEFUL_TERMINATION;
-//                        }
-//                        else {
-//                            // We never saw a frame, so this is probably an error that caused
-//                            // NvStreamer to terminate prior to sending any frames.
-//                            terminationErrorCode = ML_ERROR_UNEXPECTED_EARLY_TERMINATION;
-//                        }
-//                        break;
-//                    default:
-//                        break;
-//                    }
-//                }
-//                else {
-//                    uint16_t terminationReason;
-//
-//                    // This is the short termination message
-//                    BbInitializeWrappedBuffer(&bb, (char*)ctlHdr, sizeof(*ctlHdr), packetLength - sizeof(*ctlHdr), BYTE_ORDER_LITTLE);
-//                    BbGet16(&bb, &terminationReason);
-//
-//                    Limelog("Server notified termination reason: 0x%04x\n", terminationReason);
-//
-//                    // SERVER_TERMINATED_INTENDED
-//                    if (terminationReason == 0x0100) {
-//                        if (lastSeenFrame != 0) {
-//                            // Pass error code 0 to notify the client that this was not an error
-//                            terminationErrorCode = ML_ERROR_GRACEFUL_TERMINATION;
-//                        }
-//                        else {
-//                            // We never saw a frame, so this is probably an error that caused
-//                            // NvStreamer to terminate prior to sending any frames.
-//                            terminationErrorCode = ML_ERROR_UNEXPECTED_EARLY_TERMINATION;
-//                        }
-//                    }
-//                    else {
-//                        // Otherwise pass the reason unmodified
-//                        terminationErrorCode = terminationReason;
-//                    }
-//                }
-//
-//                // We used to wait for a ENET_EVENT_TYPE_DISCONNECT event, but since
-//                // GFE 3.20.3.63 we don't get one for 10 seconds after we first get
-//                // this termination message. The termination message should be reliable
-//                // enough to end the stream now, rather than waiting for an explicit
-//                // disconnect. The server will also not acknowledge our disconnect
-//                // message once it sends this message, so we mark the peer as fully
-//                // disconnected now to avoid delays waiting for an ack that will
-//                // never arrive.
-//                PltLockMutex(&enetMutex);
-//                enet_peer_disconnect_now(peer, 0);
-//                PltUnlockMutex(&enetMutex);
-//                ListenerCallbacks.connectionTerminated((int)terminationErrorCode);
-//                free(ctlHdr);
-//                return;
-//            }
-//
-//            free(ctlHdr);
-//        }
-//        else if (event.type == ENET_EVENT_TYPE_DISCONNECT) {
-//            Limelog("Control stream received unexpected disconnect event\n");
-//            ListenerCallbacks.connectionTerminated(-1);
-//            return;
-//        }
-//    }
-//}
 
 static void lossStatsThreadFunc(void* context) {
     BYTE_BUFFER byteBuffer;
