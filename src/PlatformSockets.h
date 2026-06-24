@@ -18,7 +18,7 @@ extern in_port_t n3ds_udp_port;
 #endif
 #endif
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(NXDK)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <wlanapi.h>
