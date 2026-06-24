@@ -397,37 +397,7 @@ void connectionSawFrame(PRTP_VIDEO_QUEUE queue) {
     queue->lastSeenFrame = frameIndex;
 }
 
-//todo:这个方面2026年6月24日从官方同步，还未验证作用，ctlSock我们这里是没有的，因为已经剥离了通讯层
-// Reads an NV control stream packet from the TCP connection
-// static PNVCTL_TCP_PACKET_HEADER readNvctlPacketTcp(void) {
-//     NVCTL_TCP_PACKET_HEADER staticHeader;
-//     PNVCTL_TCP_PACKET_HEADER fullPacket;
-//     SOCK_RET err;
-
-//     err = recv(ctlSock, (char*)&staticHeader, sizeof(staticHeader), 0);
-//     if (err != sizeof(staticHeader)) {
-//         return NULL;
-//     }
-
-//     staticHeader.type = LE16(staticHeader.type);
-//     staticHeader.payloadLength = LE16(staticHeader.payloadLength);
-
-//     fullPacket = (PNVCTL_TCP_PACKET_HEADER)malloc(staticHeader.payloadLength + sizeof(staticHeader));
-//     if (fullPacket == NULL) {
-//         return NULL;
-//     }
-
-//     memcpy(fullPacket, &staticHeader, sizeof(staticHeader));
-//     if (staticHeader.payloadLength != 0) {
-//         err = recv(ctlSock, (char*)(fullPacket + 1), staticHeader.payloadLength, 0);
-//         if (err != staticHeader.payloadLength) {
-//             free(fullPacket);
-//             return NULL;
-//         }
-//     }
-
-//     return fullPacket;
-// }
+//static PNVCTL_TCP_PACKET_HEADER readNvctlPacketTcp(void) 是用于支持app版本5之前的api，我们这里做移除标记。
 
 static bool encryptControlMessage(PNVCTL_ENCRYPTED_PACKET_HEADER encPacket, PNVCTL_ENET_PACKET_HEADER_V2 packet) {
     unsigned char iv[16] = { 0 };
