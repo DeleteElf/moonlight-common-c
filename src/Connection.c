@@ -377,33 +377,6 @@ int LiStartConnection(PSERVER_INFORMATION serverInfo, PSTREAM_CONFIGURATION stre
         PltSleepMs(1000);
         err = resolveHostName(serverInfo->address, AF_UNSPEC, RtspPortNumber, &RemoteAddr, &AddrLen);
     }
-//    if (RtspPortNumber != 48010) {
-//        // If we have an alternate RTSP port, use that as our test port. The host probably
-//        // isn't listening on 47989 or 47984 anyway, since they're using alternate ports.
-//        err = resolveHostName(serverInfo->address, AF_UNSPEC, RtspPortNumber, &RemoteAddr, &AddrLen);
-//        if (err != 0) {
-//            // Sleep for a second and try again. It's possible that we've attempt to connect
-//            // before the host has gotten around to listening on the RTSP port. Give it some
-//            // time before retrying.
-//            PltSleepMs(1000);
-//            err = resolveHostName(serverInfo->address, AF_UNSPEC, RtspPortNumber, &RemoteAddr, &AddrLen);
-//        }
-//    }
-//    else {
-//        // We use TCP 47984 and 47989 first here because we know those should always be listening
-//        // on hosts using the standard ports.
-//        //
-//        // TCP 48010 is a last resort because:
-//        // a) it's not always listening and there's a race between listen() on the host and our connect()
-//        // b) it's not used at all by certain host versions which perform RTSP over ENet
-//        err = resolveHostName(serverInfo->address, AF_UNSPEC, 47984, &RemoteAddr, &AddrLen);
-//        if (err != 0) {
-//            err = resolveHostName(serverInfo->address, AF_UNSPEC, 47989, &RemoteAddr, &AddrLen);
-//        }
-//        if (err != 0) {
-//            err = resolveHostName(serverInfo->address, AF_UNSPEC, 48010, &RemoteAddr, &AddrLen);
-//        }
-//    }
     if (err != 0) {
         Limelog("failed: %d\n", err);
         ListenerCallbacks.stageFailed(STAGE_NAME_RESOLUTION, err);
@@ -513,15 +486,6 @@ int LiStartConnection(PSERVER_INFORMATION serverInfo, PSTREAM_CONFIGURATION stre
 
     Limelog("Starting video stream...");
     ListenerCallbacks.stageStarting(STAGE_VIDEO_STREAM_START);
-//    for(int i=0;i<streamConfig->displayCount&&i<1;i++) { //todo:暂时不支持多个RTSP
-//        err = startVideoStream(renderContext, drFlags,i);
-//        if (err != 0) {
-//            Limelog("Video stream start failed: %d\n", err);
-//            ListenerCallbacks.stageFailed(STAGE_VIDEO_STREAM_START, err);
-//            goto Cleanup;
-//        }
-//    }
-
     err = startVideoStream(renderContext, drFlags);
     if (err != 0) {
         Limelog("Video stream start failed: %d\n", err);

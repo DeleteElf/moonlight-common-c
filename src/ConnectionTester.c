@@ -2,12 +2,6 @@
 
 #define TEST_PORT_TIMEOUT_SEC 3
 
-//#define VALID_PORT_FLAG_MASK (ML_PORT_FLAG_TCP_47984 | \
-//                              ML_PORT_FLAG_TCP_47989 | \
-//                              ML_PORT_FLAG_TCP_48010 | \
-//                              ML_PORT_FLAG_UDP_CONTROL | \
-//                              ML_PORT_FLAG_UDP_AUDIO | \
-//                              ML_PORT_FLAG_UDP_VIDEO)
 #define VALID_PORT_FLAG_MASK (ML_PORT_FLAG_TCP_48010 | \
                               ML_PORT_FLAG_UDP_CONTROL)
 
@@ -22,7 +16,6 @@ unsigned int LiGetPortFlagsFromStage(int stage)
         case STAGE_RTSP_HANDSHAKE:
             // GFE 3.22 requires a successful ping on 48000 to complete RTSP handshake
             return ML_PORT_FLAG_TCP_48010 | ML_PORT_FLAG_UDP_CONTROL;
-//            return ML_PORT_FLAG_TCP_48010 | ML_PORT_FLAG_UDP_VIDEO | ML_PORT_FLAG_UDP_AUDIO;
         case STAGE_CONTROL_STREAM_START:
             return ML_PORT_FLAG_UDP_CONTROL;
 
@@ -36,9 +29,6 @@ unsigned int LiGetPortFlagsFromTerminationErrorCode(int errorCode)
     switch (errorCode)
     {
         case ML_ERROR_NO_VIDEO_TRAFFIC:
-            // Video is UDP 47998, but we'll also test UDP 48000 because
-            // we don't have an equivalent audio traffic error.
-//            return ML_PORT_FLAG_UDP_VIDEO | ML_PORT_FLAG_UDP_AUDIO;
             return ML_PORT_FLAG_UDP_CONTROL;
         default:
             return 0;

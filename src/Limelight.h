@@ -915,23 +915,15 @@ typedef struct _RTP_VIDEO_STATS {
 const RTP_VIDEO_STATS* LiGetRTPVideoStats(int trackIndex);
 
 // Port index flags for use with LiGetPortFromPortFlagIndex() and LiGetProtocolFromPortFlagIndex()
-//#define ML_PORT_INDEX_TCP_47984 0
-//#define ML_PORT_INDEX_TCP_47989 1
 #define ML_PORT_INDEX_TCP_48010 2 //48010
 
 #define ML_PORT_INDEX_UDP_CONTROL 8 //48000
-//#define ML_PORT_INDEX_UDP_AUDIO 9 //48000
-//#define ML_PORT_INDEX_UDP_VIDEO 10 //48000
 
 // Port flags for use with LiTestClientConnectivity()
 #define ML_PORT_FLAG_ALL       0xFFFFFFFF
-//#define ML_PORT_FLAG_TCP_47984 0x0001
-//#define ML_PORT_FLAG_TCP_47989 0x0002
 #define ML_PORT_FLAG_TCP_48010 0x0004
 
 #define ML_PORT_FLAG_UDP_CONTROL 0x0100
-//#define ML_PORT_FLAG_UDP_AUDIO 0x0200
-//#define ML_PORT_FLAG_UDP_VIDEO  0x0400
 // Returns the port flags that correspond to ports involved in a failing connection stage, or
 // connection termination error.
 //

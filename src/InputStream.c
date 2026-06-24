@@ -93,7 +93,7 @@ static struct {
 // Initializes the input stream
 int initializeInputStream(void) {
     memcpy(currentAesIv, StreamConfig.remoteInputAesIv, sizeof(currentAesIv));
-    
+
     // Set a high maximum queue size limit to ensure input isn't dropped
     // while the input send thread is blocked for short periods.
     LbqInitializeLinkedBlockingQueue(&packetQueue, MAX_QUEUED_INPUT_PACKETS);
@@ -127,7 +127,7 @@ int initializeInputStream(void) {
 // Destroys and cleans up the input stream
 void destroyInputStream(void) {
     PLINKED_BLOCKING_QUEUE_ENTRY entry, nextEntry;
-    
+
     PltDestroyCryptoContext(cryptoContext);
 
     entry = LbqDestroyLinkedBlockingQueue(&packetQueue);
@@ -264,35 +264,23 @@ static bool sendInputPacket(PPACKET_HOLDER holder, bool moreData) {
         encryptedLengthPrefix = BE32(encryptedSize);
         memcpy(&encryptedBuffer[0], &encryptedLengthPrefix, sizeof(encryptedLengthPrefix));
 
-//        if (AppVersionQuad[0] < 5) {
-//            // Send the encrypted payload
-//            err = send(inputSock, (const char*) encryptedBuffer,
-//                (int) (encryptedSize + sizeof(encryptedLengthPrefix)), 0);
-//            if (err <= 0) {
-//                Limelog("Input: send() failed: %d\n", (int) LastSocketError());
-//                ListenerCallbacks.connectionTerminated(LastSocketFail());
-//                return false;
-//            }
-//        }
-//        else {
-            // For reasons that I can't understand, NVIDIA decides to use the last 16
-            // bytes of ciphertext in the most recent game controller packet as the IV for
-            // future encryption. I think it may be a buffer overrun on their end but we'll have
-            // to mimic it to work correctly.
-            if (AppVersionQuad[0] >= 7 && encryptedSize >= 16 + sizeof(currentAesIv)) {
-                memcpy(currentAesIv,
-                       &encryptedBuffer[4 + encryptedSize - sizeof(currentAesIv)],
-                       sizeof(currentAesIv));
-            }
+        // For reasons that I can't understand, NVIDIA decides to use the last 16
+        // bytes of ciphertext in the most recent game controller packet as the IV for
+        // future encryption. I think it may be a buffer overrun on their end but we'll have
+        // to mimic it to work correctly.
+        if (AppVersionQuad[0] >= 7 && encryptedSize >= 16 + sizeof(currentAesIv)) {
+            memcpy(currentAesIv,
+                   &encryptedBuffer[4 + encryptedSize - sizeof(currentAesIv)],
+                   sizeof(currentAesIv));
+        }
 
-            err = (SOCK_RET)sendInputPacketOnControlStream((unsigned char*) encryptedBuffer,
-                                                            (int)(encryptedSize + sizeof(encryptedLengthPrefix)));
-            if (err < 0) {
-                Limelog("Input: sendInputPacketOnControlStream() failed: %d\n", (int) err);
-                ListenerCallbacks.connectionTerminated(err);
-                return false;
-            }
-//        }
+        err = (SOCK_RET)sendInputPacketOnControlStream((unsigned char*) encryptedBuffer,
+                                                        (int)(encryptedSize + sizeof(encryptedLengthPrefix)));
+        if (err < 0) {
+            Limelog("Input: sendInputPacketOnControlStream() failed: %d\n", (int) err);
+            ListenerCallbacks.connectionTerminated(err);
+            return false;
+        }
     }
 
     return true;
@@ -656,7 +644,7 @@ int stopInputStream(void) {
     if (inputSock != INVALID_SOCKET) {
         shutdownTcpSocket(inputSock);
     }
-    
+
     if (inputSock != INVALID_SOCKET) {
         closeSocket(inputSock);
         inputSock = INVALID_SOCKET;

@@ -18,7 +18,7 @@ int extractVersionQuadFromString(const char* string, int* quad) {
             nextNumber++;
         }
     }
-    
+
     return 0;
 }
 

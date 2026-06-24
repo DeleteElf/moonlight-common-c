@@ -514,14 +514,8 @@ static int fillSdpHeader(char* buffer, size_t length, int rtspClientVersion, cha
 // Populate the SDP tail with required information
 static int fillSdpTail(char* buffer, size_t length,int displayCount) {
     LC_ASSERT(ControlPortNumber != 0);
-//    if(displayCount==1) {
-        return snprintf(buffer, length, "t=0 0\r\n"
-                                        "m=video %d  \r\n",ControlPortNumber);
-//    }else{//todo:暂时不支持多个RTSP
-//        LC_ASSERT(Video2PortNumber != 0);
-//        return snprintf(buffer, length, "t=0 0\r\n"
-//                                        "m=video %d %d \r\n",Video1PortNumber,Video2PortNumber);
-//    }
+    return snprintf(buffer, length, "t=0 0\r\n"
+                                    "m=video %d  \r\n",ControlPortNumber);
 }
 
 // Get the SDP attributes for the stream config
