@@ -196,7 +196,7 @@ static void VideoReceiveThreadProc(void* context) {
 void notifyKeyFrameReceived(int displayIndex) {
     // Remember that we got a full frame successfully
     receivedFullFrame = true;
-    Limelog("received key frame,trackIndex:%d\n",displayIndex);
+    Limelog("收到关键帧,trackIndex:%d\n",displayIndex);
 }
 
 // Decoder thread proc

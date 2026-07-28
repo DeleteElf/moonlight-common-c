@@ -83,7 +83,9 @@ typedef int SOCKADDR_LEN;
 #include <signal.h>
 #include <poll.h>
 
+#ifndef ioctlsocket
 #define ioctlsocket ioctl
+#endif
 #define LastSocketError() errno
 #define SetLastSocketError(x) errno = x
 #define INVALID_SOCKET -1

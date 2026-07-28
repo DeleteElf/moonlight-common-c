@@ -553,15 +553,9 @@ static void reassembleFrame(PVIDEO_DEPACKETIZER depacketizer,int frameNumber, bo
                     depacketizer->waitingForIdrFrame = true;
 
                     // Clear NAL state for the frame that we failed to enqueue
-//                    depacketizer->nalChainHead = qdu->decodeUnit.bufferList;
-//                    depacketizer->nalChainDataLength = qdu->decodeUnit.fullLength;
-                    PLENTRY_INTERNAL lastEntry;
-                    while (qdu->decodeUnit.bufferList != NULL) {
-                        lastEntry = (PLENTRY_INTERNAL)qdu->decodeUnit.bufferList;
-                        qdu->decodeUnit.bufferList = lastEntry->entry.next;
-                        free(lastEntry->allocPtr);
-                    }
-                    // dropFrameState(depacketizer);
+                    depacketizer->nalChainHead = qdu->decodeUnit.bufferList;
+                    depacketizer->nalChainDataLength = qdu->decodeUnit.fullLength;
+                    dropFrameState(depacketizer);
 
                     // Free the DU we were going to queue
                     free(qdu);
@@ -655,7 +649,6 @@ static void queueFragment(PVIDEO_DEPACKETIZER depacketizer, PLENTRY_INTERNAL* ex
     }
 
     if (entry != NULL) {
-//        PltLockMutex(&depacketizer->entryMutex);
         entry->entry.next = NULL;
         entry->entry.length = length;
 
@@ -690,7 +683,6 @@ static void queueFragment(PVIDEO_DEPACKETIZER depacketizer, PLENTRY_INTERNAL* ex
             depacketizer->nalChainTail->next = (PLENTRY)entry;
             depacketizer->nalChainTail = depacketizer->nalChainTail->next;
         }
-//        PltUnlockMutex(&depacketizer->entryMutex);
     }
 }
 
@@ -1047,7 +1039,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
     int ssrc=(*existingEntry)->entry.ssrc;
     if (NegotiatedVideoFormat & (VIDEO_FORMAT_MASK_H264 | VIDEO_FORMAT_MASK_H265)) {
         if (firstPacket && isIdrFrameStart(&currentPos)) {
-            Limelog("rtp payload: video packet is idr===========================>%d\n",ssrc);
+            Limelog("收到关键帧===========================>%d\n",ssrc);
 
             // SPS and PPS prefix is padded between NALs, so we must decode it with the slow path
             processAvcHevcRtpPayloadSlow(depacketizer,&currentPos, existingEntry);

@@ -1,0 +1,3 @@
+[submodule "nanors"]
+	path = nanors
+	url = https://github.com/sleepybishop/nanors.git

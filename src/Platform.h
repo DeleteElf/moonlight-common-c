@@ -132,7 +132,11 @@
 #define LC_ASSERT_VT(x) LC_ASSERT(x)
 #endif
 
-#if defined(__has_builtin) && __has_builtin(__builtin_bswap16)
+#ifndef __has_builtin
+#define __has_builtin(x) 0
+#endif
+
+#if __has_builtin(__builtin_bswap16)
 #define LC_HAS_BUILTIN_BSWAP
 #endif
 

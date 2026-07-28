@@ -1,5 +1,7 @@
 #include "Limelight-internal.h"
 
+#include <rs.h>
+
 #if defined(LC_DEBUG) && !defined(LC_FUZZING)
 // This enables FEC validation mode with a synthetic drop
 // and recovered packet checks vs the original input. It
@@ -55,8 +57,7 @@ void RtpaInitializeQueue(PRTP_AUDIO_QUEUE queue) {
     // works correctly. This is possible because the data and FEC shard count is
     // constant and known in advance.
     const unsigned char parity[] = { 0x77, 0x40, 0x38, 0x0e, 0xc7, 0xa7, 0x0d, 0x6c };
-    memcpy(&queue->rs->m[16], parity, sizeof(parity));
-    memcpy(queue->rs->parity, parity, sizeof(parity));
+    memcpy(queue->rs->p, parity, sizeof(parity));
 }
 
 static void validateFecBlockState(PRTP_AUDIO_QUEUE queue) {
@@ -282,7 +283,7 @@ static PRTPA_FEC_BLOCK getFecBlockForRtpPacket(PRTP_AUDIO_QUEUE queue, PRTP_PACK
     }
     else {
         Limelog("Invalid RTP audio payload type: %u\n", packet->packetType);
-        // LC_ASSERT_VT(false);
+        LC_ASSERT_VT(false);
         return NULL;
     }
 
@@ -444,7 +445,7 @@ static bool completeFecBlock(PRTP_AUDIO_QUEUE queue, PRTPA_FEC_BLOCK block) {
     memset(block->dataPackets[dropIndex], 0, sizeof(RTP_PACKET) + block->blockSize);
 #endif
 
-    int res = reed_solomon_reconstruct(queue->rs, shards, block->marks, RTPA_TOTAL_SHARDS, block->blockSize);
+    int res = reed_solomon_decode(queue->rs, shards, block->marks, RTPA_TOTAL_SHARDS, block->blockSize);
     if (res != 0) {
         // We should always have enough data to recover the entire block since we checked above.
         LC_ASSERT(res == 0);
