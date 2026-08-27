@@ -448,46 +448,22 @@ static PSDP_OPTION getAttributesList(char*urlSafeAddr) {
     }
 
     if (AppVersionQuad[0] >= 7) {
+        AudioPacketDuration = 10; //考虑到udp数据包的大小问题，音频统一按10毫秒执行
         if (StreamConfig.bitrate >= HIGH_AUDIO_BITRATE_THRESHOLD && audioChannelCount > 2 &&
                 HighQualitySurroundSupported && (AudioCallbacks.capabilities & CAPABILITY_SLOW_OPUS_DECODER) == 0) {
             // Enable high quality mode for surround sound
             err |= addAttributeString(&optionHead, "x-nv-audio.surround.AudioQuality", "1");
-
             // Let the audio stream code know that it needs to disable coupled streams when
             // decoding this audio stream.
             HighQualitySurroundEnabled = true;
-
-            // Use 5 ms frames since we don't have a slow decoder
-            AudioPacketDuration = 5;
-        }
-        else {
+        } else {
             err |= addAttributeString(&optionHead, "x-nv-audio.surround.AudioQuality", "0");
             HighQualitySurroundEnabled = false;
-
-            if ((AudioCallbacks.capabilities & CAPABILITY_SLOW_OPUS_DECODER) ||
-                     ((AudioCallbacks.capabilities & CAPABILITY_SUPPORTS_ARBITRARY_AUDIO_DURATION) != 0 &&
-                       StreamConfig.bitrate < LOW_AUDIO_BITRATE_TRESHOLD)) {
-                // Use 10 ms packets for slow devices and networks to balance latency and bandwidth usage
-                AudioPacketDuration = 10;
-            }
-            else {
-                // Use 5 ms packets by default for lowest latency
-                AudioPacketDuration = 5;
-            }
         }
 
         snprintf(payloadStr, sizeof(payloadStr), "%d", AudioPacketDuration);
         err |= addAttributeString(&optionHead, "x-nv-aqos.packetDuration", payloadStr);
-    }
-    else {
-        // 5 ms duration for legacy servers
-        AudioPacketDuration = 5;
 
-        // High quality audio mode not supported on legacy servers
-        HighQualitySurroundEnabled = false;
-    }
-
-    if (AppVersionQuad[0] >= 7) {
         snprintf(payloadStr, sizeof(payloadStr), "%d", (StreamConfig.colorSpace << 1) | StreamConfig.colorRange);
         err |= addAttributeString(&optionHead, "x-nv-video[0].encoderCscMode", payloadStr);
     }
