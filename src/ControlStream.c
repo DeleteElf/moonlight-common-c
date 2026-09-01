@@ -1042,9 +1042,9 @@ uint32_t LiGetConnectData(){
 }
 
 // Starts the control stream
-int startControlStream(void) {
+int startControlStream(int channelCount) {
     if(networkChannelStartCallback!=NULL){
-        int ret=networkChannelStartCallback(3,ControlPortNumber);
+        int ret=networkChannelStartCallback(channelCount,ControlPortNumber);
         if(ret!=0) {
             stopping = true;
             return ret;
