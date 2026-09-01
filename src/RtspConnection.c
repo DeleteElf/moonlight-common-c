@@ -919,7 +919,7 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
         }
 
         if (response.message.response.statusCode != 200) {
-            Limelog("RTSP OPTIONS request failed: %d\n",
+            Limelog("RTSP OPTIONS request status code error: %d\n",
                 response.message.response.statusCode);
             ret = response.message.response.statusCode;
             goto Exit;

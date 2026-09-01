@@ -116,7 +116,7 @@ static void reportFinalFrameFecStatus(PRTP_VIDEO_QUEUE queue) {
     connectionSendFrameFecStatus(&fecStatus);
 }
 
-// newEntry is contained within the packet buffer so we free the whole entry by freeing entry->packet
+// 由于newEntry包含在数据包缓冲区中，因此我们通过释放entry->packet来释放整个条目
 static bool queuePacket(PRTP_VIDEO_QUEUE queue, PRTPV_QUEUE_ENTRY newEntry, PRTP_PACKET packet, int length, bool isParity, bool isFecRecovery) {
     PRTPV_QUEUE_ENTRY entry;
     bool outOfSequence;
@@ -249,7 +249,7 @@ static int reconstructFrame(int trackIndex,PRTP_VIDEO_QUEUE queue) {
     }
 
 #ifdef FEC_VALIDATION_MODE
-    // If FEC is disabled or unsupported for this frame, we must bail early here.
+    // 如果此帧禁用或不支持前向纠错（FEC），我们必须在此提前退出。
     if ((queue->fecPercentage == 0 || AppVersionQuad[0] < 5) &&
             queue->receivedDataPackets == queue->bufferDataPackets) {
 #else
@@ -302,8 +302,7 @@ static int reconstructFrame(int trackIndex,PRTP_VIDEO_QUEUE queue) {
 
 #ifdef FEC_VALIDATION_MODE
         if (index == dropIndex) {
-            // If this was the drop choice, remember the original contents
-            // and "drop" it.
+            // 如果这是要“丢弃”的选择，请记住其原始内容并将其“丢弃”。
             droppedRtpPacket = entry->packet;
             droppedRtpPacketLength = entry->length;
             entry = entry->next;
@@ -311,7 +310,7 @@ static int reconstructFrame(int trackIndex,PRTP_VIDEO_QUEUE queue) {
         }
 #endif
 
-        // We should never have duplicate packets enqueued
+        // 我们绝不应该让重复的数据包进入队列
         LC_ASSERT(packets[index] == NULL);
         LC_ASSERT(marks[index] != 0);
 
@@ -590,7 +589,7 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
     }
 #endif
 
-    uint32_t fecIndex = (nvPacket->fecInfo & 0x3FF000) >> 12;
+    uint32_t fecIndex =(nvPacket->fecInfo >>12)& 0x3FF;// (nvPacket->fecInfo & 0x3FF000) >> 12;
     uint8_t fecCurrentBlockNumber = (nvPacket->multiFecBlocks >> 4) & 0x3;
 
     if (nvPacket->frameIndex == queue->currentFrameNumber && fecCurrentBlockNumber < queue->multiFecCurrentBlockNumber) {
@@ -708,8 +707,8 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
         queue->missingPackets = 0;
         queue->useFastQueuePath = true;
         queue->reportedLostFrame = false;
-        queue->bufferDataPackets = (nvPacket->fecInfo & 0xFFC00000) >> 22;
-        queue->fecPercentage = (nvPacket->fecInfo & 0xFF0) >> 4;
+        queue->bufferDataPackets = (nvPacket->fecInfo >>22)& 0x3FF; //(nvPacket->fecInfo & 0xFFC00000) >> 22;
+        queue->fecPercentage = (nvPacket->fecInfo >>4)& 0x7F; //(nvPacket->fecInfo & 0xFF0) >> 4;
         queue->bufferParityPackets = (queue->bufferDataPackets * queue->fecPercentage + 99) / 100;
         queue->bufferFirstParitySequenceNumber = U16(queue->bufferLowestSequenceNumber + queue->bufferDataPackets);
         queue->bufferHighestSequenceNumber = U16(queue->bufferFirstParitySequenceNumber + queue->bufferParityPackets - 1);
@@ -726,8 +725,8 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
     }
 
     LC_ASSERT_VT(!queue->fecPercentage || U16(packet->sequenceNumber - fecIndex) == queue->bufferLowestSequenceNumber);
-    LC_ASSERT_VT((nvPacket->fecInfo & 0xFF0) >> 4 == queue->fecPercentage);
-    LC_ASSERT_VT((nvPacket->fecInfo & 0xFFC00000) >> 22 == queue->bufferDataPackets);
+    LC_ASSERT_VT((nvPacket->fecInfo >>4& 0x7F) == queue->fecPercentage);
+    LC_ASSERT_VT((nvPacket->fecInfo >>22& 0x3FF) == queue->bufferDataPackets);
 
     // Verify that the legacy non-multi-FEC compatibility code works
     LC_ASSERT_VT(queue->multiFecCapable || fecCurrentBlockNumber == 0);
@@ -787,8 +786,8 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
             LC_ASSERT(queue->pendingFecBlockList.tail == NULL);
             LC_ASSERT(queue->pendingFecBlockList.count == 0);
 
-            // If we're not yet at the last FEC block for this frame, move on to the next block.
-            // Otherwise, the frame is complete and we can move on to the next frame.
+            // 如果我们还没有到达这一帧的最后一个前向纠错（FEC）块，那么就继续处理下一个块。
+            // 否则，该帧已完成，我们可以继续处理下一帧。
             if (queue->multiFecCurrentBlockNumber < queue->multiFecLastBlockNumber) {
                 // Move on to the next FEC block for this frame
                 queue->multiFecCurrentBlockNumber++;

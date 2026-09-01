@@ -812,9 +812,8 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
         return;
     }
 
-    // The FEC queue can sometimes recover corrupt frames (see comments in RtpFecQueue).
-    // It almost always detects them before they get to us, but in case it doesn't
-    // the streamPacketIndex not matching correctly should find nearly all of the rest.
+    // FEC队列有时可以恢复损坏的帧（见RtpFecQueue中的注释）。
+    // 它几乎总是能在它们到达我们之前检测到它们，但万一没有检测到，那么streamPacketIndex不正确匹配应该能找到几乎所有其他问题。
     if (isBefore24(streamPacketIndex, U24(depacketizer->lastPacketInStream + 1)) ||
             (!(flags & FLAG_SOF) && streamPacketIndex != U24(depacketizer->lastPacketInStream + 1))) {
         Limelog("解包器[%d]检测到损坏的帧: %d",depacketizer->trackIndex, frameIndex);
