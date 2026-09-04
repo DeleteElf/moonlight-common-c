@@ -207,22 +207,19 @@ static int reconstructFrame(int trackIndex,PRTP_VIDEO_QUEUE queue) {
     LC_ASSERT(totalPackets == U16(queue->bufferHighestSequenceNumber - queue->bufferLowestSequenceNumber) + 1U);
 
 #ifdef FEC_VALIDATION_MODE
-    // We'll need an extra packet to run in FEC validation mode, because we will
-    // be "dropping" one below and recovering it using parity. However, some frames
-    // are so large that FEC is disabled entirely, so don't wait for parity on those.
+    // 在FEC验证模式下运行时，我们需要一个额外的数据包，因为我们会“丢弃”一个数据包，
+    // 然后使用奇偶校验来恢复它。然而，有些帧太大，以至于完全禁用了FEC，所以不要等待这些帧的奇偶校验
     neededPackets += queue->fecPercentage ? 1 : 0;
 #endif
 
     LC_ASSERT(totalPackets - neededPackets <= queue->bufferParityPackets);
 
     if (queue->pendingFecBlockList.count < neededPackets) {
-        // If we've never received OOS data from this host, we can predict whether this frame will be recoverable
-        // based on the packets we've received (or not) so far. If the number of missing shards exceeds the total
-        // needed shards, there is no hope of recovering the data. The only way we could recover this frame is by
-        // receiving OOS data, which is unlikely because we've not seen any recently from this host.
+        // 如果我们从未从这个主机收到过OOS数据，那么我们可以根据目前已经收到（或未收到）的数据包来预测这个帧是否可恢复。
+        // 如果缺失的分片数量超过了所需的总分片数，那么数据就无法恢复了。
+        // 我们恢复这个帧的唯一途径就是收到OOS数据，但鉴于我们最近没有从这个主机收到任何数据，所以这种可能性很小。
         if (!queue->reportedLostFrame && !queue->receivedOosData) {
-            // NB: We use totalPackets - neededPackets instead of just bufferParityPackets here because we require
-            // one extra parity shard for recovery if we're in FEC validation mode.
+            // 注意：此处我们使用totalPackets - neededPackets，而不是仅仅使用bufferParityPackets，因为如果处于FEC验证模式，我们需要额外的一个奇偶校验碎片用于恢复。
             if (queue->missingPackets > totalPackets - neededPackets) {
                 notifyFrameLost(trackIndex,queue->currentFrameNumber, true);
                 queue->reportedLostFrame = true;
@@ -232,9 +229,7 @@ static int reconstructFrame(int trackIndex,PRTP_VIDEO_QUEUE queue) {
                 LC_ASSERT(neededPackets - queue->pendingFecBlockList.count <= U16(queue->bufferHighestSequenceNumber - queue->receivedHighestSequenceNumber));
             }
         }
-
-        // Not enough data to recover yet
-        return -1;
+        return -1;//用于fec解码的数据不足，直接返回-1，等待下个数据包
     }
 
     // If we make it here and reported a lost frame, we lied to the host. This can happen if we happen to get
@@ -247,23 +242,12 @@ static int reconstructFrame(int trackIndex,PRTP_VIDEO_QUEUE queue) {
         queue->lastOosFramePresentationTimestamp = queue->pendingFecBlockList.head->presentationTimeUs;
         Limelog("Leaving speculative RFI mode due to incorrect loss prediction of frame %u\n", queue->currentFrameNumber);
     }
-
+ if (
 #ifdef FEC_VALIDATION_MODE
-    // 如果此帧禁用或不支持前向纠错（FEC），我们必须在此提前退出。
-    if ((queue->fecPercentage == 0 || AppVersionQuad[0] < 5) &&
-            queue->receivedDataPackets == queue->bufferDataPackets) {
-#else
-    if (queue->receivedDataPackets == queue->bufferDataPackets) {
+   queue->fecPercentage == 0 &&
 #endif
-        // We've received a full frame with no need for FEC.
-        return 0;
-    }
-
-    if (AppVersionQuad[0] < 5) {
-        // Our FEC recovery code doesn't work properly until Gen 5
-        Limelog("FEC recovery not supported on Gen %d servers\n",
-                AppVersionQuad[0]);
-        return -1;
+    queue->receivedDataPackets == queue->bufferDataPackets) {// 如果此帧禁用或不支持前向纠错（FEC），我们必须在此提前退出。
+        return 0;// 接收到没有执行fec编码的数据帧
     }
 
     reed_solomon* rs = NULL;
