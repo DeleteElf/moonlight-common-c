@@ -274,8 +274,7 @@ static int reconstructFrame(int trackIndex,PRTP_VIDEO_QUEUE queue) {
     int packetBufferSize = receiveSize + sizeof(RTPV_QUEUE_ENTRY);
 
 #ifdef FEC_VALIDATION_MODE
-    //todo:这里有个bug，如果数据包只有一个
-    unsigned int dropIndex = rand() % queue->bufferDataPackets;
+    unsigned int dropIndex = rand() % queue->bufferDataPackets;//随机丢弃一个数据包，不理解，理论上fec不要求丢弃的
     PRTP_PACKET droppedRtpPacket = NULL;
     int droppedRtpPacketLength = 0;
 #endif
