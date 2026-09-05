@@ -274,7 +274,7 @@ static int reconstructFrame(int trackIndex,PRTP_VIDEO_QUEUE queue) {
     int packetBufferSize = receiveSize + sizeof(RTPV_QUEUE_ENTRY);
 
 #ifdef FEC_VALIDATION_MODE
-    // Choose a packet to drop
+    //todo:这里有个bug，如果数据包只有一个
     unsigned int dropIndex = rand() % queue->bufferDataPackets;
     PRTP_PACKET droppedRtpPacket = NULL;
     int droppedRtpPacketLength = 0;
@@ -285,7 +285,7 @@ static int reconstructFrame(int trackIndex,PRTP_VIDEO_QUEUE queue) {
         unsigned int index = U16(entry->packet->sequenceNumber - queue->bufferLowestSequenceNumber);
 
 #ifdef FEC_VALIDATION_MODE
-        if (index == dropIndex) {
+        if (index == dropIndex &&queue->bufferDataPackets!=1) {
             // 如果这是要“丢弃”的选择，请记住其原始内容并将其“丢弃”。
             droppedRtpPacket = entry->packet;
             droppedRtpPacketLength = entry->length;
