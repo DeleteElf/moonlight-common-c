@@ -2,13 +2,13 @@
 
 #include <rs.h>
 
-#if defined(LC_DEBUG) && !defined(LC_FUZZING)
-// This enables FEC validation mode with a synthetic drop
-// and recovered packet checks vs the original input. It
-// is on by default for debug builds.
-#define FEC_VALIDATION_MODE
-#define FEC_VERBOSE
-#endif
+//#if defined(LC_DEBUG) && !defined(LC_FUZZING)
+//// This enables FEC validation mode with a synthetic drop
+//// and recovered packet checks vs the original input. It
+//// is on by default for debug builds.
+//#define FEC_VALIDATION_MODE
+//#define FEC_VERBOSE
+//#endif
 
 // Don't try speculative RFI for 5 minutes after seeing
 // an out of order packet or incorrect prediction

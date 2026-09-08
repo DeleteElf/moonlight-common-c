@@ -151,7 +151,7 @@ static void decodeInputData(PQUEUED_AUDIO_PACKET packet) {
 
     PRTP_PACKET rtp = (PRTP_PACKET)&packet->data[0];
     if (lastSeq != 0 && (unsigned short)(lastSeq + 1) != rtp->sequenceNumber) {
-        Limelog("Network dropped audio data (expected %d, but received %d)\n", lastSeq + 1, rtp->sequenceNumber);
+        Limelog("网络丢弃了音频数据（预期为[%d]，但实际收到[%d]）\n", lastSeq + 1, rtp->sequenceNumber);
     }
 
     lastSeq = rtp->sequenceNumber;
@@ -242,6 +242,15 @@ static void AudioReceiveThreadProc(void* context) {
             bufferPacket.len=MAX_PACKET_SIZE;
             bufferPacket.buf=&packet->data[0];
             networkReceiveCallback(&bufferPacket,SocketChannelAudio);
+            if(!StreamConfig.allowFec){//如果不允许fec，则使用直接使用数据
+                if (bufferPacket.len == 0) {//如果底层解包失败，则直接塞入空数据给lib opus
+                    AudioCallbacks.decodeAndPlaySample(NULL, 0);
+                    return;
+                }
+//                LC_ASSERT_VT(bufferPacket.buf[0] == opusHeaderByte);
+                AudioCallbacks.decodeAndPlaySample(bufferPacket.buf,bufferPacket.len);
+                continue;
+            }
             if (bufferPacket.len<=0) {
                 Limelog("接收音频数据失败\n", (int)LastSocketError());
                 ListenerCallbacks.connectionTerminated(LastSocketFail());

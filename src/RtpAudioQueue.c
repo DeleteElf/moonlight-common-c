@@ -2,20 +2,20 @@
 
 #include <rs.h>
 
-#if defined(LC_DEBUG) && !defined(LC_FUZZING)
-// This enables FEC validation mode with a synthetic drop
-// and recovered packet checks vs the original input. It
-// is on by default for debug builds.
-//
-// NB: Unlike the video FEC feature of the same name, this
-// is much more restrictive in terms of when the validation
-// runs. Due to the logic to immediately return in-order
-// data packets, it requires non-consecutive data packets to
-// trigger the call to completeFecBlock(). Missing or OOO
-// packets will do the job.
-#define FEC_VALIDATION_MODE
-#define FEC_VERBOSE
-#endif
+//#if defined(LC_DEBUG) && !defined(LC_FUZZING)
+//// This enables FEC validation mode with a synthetic drop
+//// and recovered packet checks vs the original input. It
+//// is on by default for debug builds.
+////
+//// NB: Unlike the video FEC feature of the same name, this
+//// is much more restrictive in terms of when the validation
+//// runs. Due to the logic to immediately return in-order
+//// data packets, it requires non-consecutive data packets to
+//// trigger the call to completeFecBlock(). Missing or OOO
+//// packets will do the job.
+//#define FEC_VALIDATION_MODE
+//#define FEC_VERBOSE
+//#endif
 
 #define RTP_PAYLOAD_TYPE_AUDIO   97
 #define RTP_PAYLOAD_TYPE_FEC     127
@@ -203,7 +203,7 @@ static PRTPA_FEC_BLOCK getFecBlockForRtpPacket(PRTP_AUDIO_QUEUE queue, PRTP_PACK
 
     validateFecBlockState(queue);
 
-    if (packet->packetType == RTP_PAYLOAD_TYPE_AUDIO) {
+    if (packet->packetType == RTP_PAYLOAD_TYPE_AUDIO) {//静态音频
         if (length < sizeof(RTP_PACKET)) {
             queue->stats.packetCountInvalid++;
             Limelog("RTP audio data packet too small: %u\n", length);
@@ -238,8 +238,7 @@ static PRTPA_FEC_BLOCK getFecBlockForRtpPacket(PRTP_AUDIO_QUEUE queue, PRTP_PACK
         fecBlockSsrc = packet->ssrc;
 
         blockSize = length - sizeof(RTP_PACKET);
-    }
-    else if (packet->packetType == RTP_PAYLOAD_TYPE_FEC) {
+    } else if (packet->packetType == RTP_PAYLOAD_TYPE_FEC) { //动态音频 即 fec生成的内容
         PAUDIO_FEC_HEADER fecHeader = (PAUDIO_FEC_HEADER)(packet + 1);
 
         if (length < sizeof(RTP_PACKET) + sizeof(AUDIO_FEC_HEADER)) {
@@ -257,8 +256,7 @@ static PRTPA_FEC_BLOCK getFecBlockForRtpPacket(PRTP_AUDIO_QUEUE queue, PRTP_PACK
         fecBlockBaseTs = BE32(fecHeader->baseTimestamp);
         fecBlockSsrc = BE32(fecHeader->ssrc);
 
-        // Ensure the FEC shard index is valid to prevent OOB access
-        // later during recovery.
+        // 确保FEC分片索引有效，以防止在后续恢复过程中发生越界访问。
         if (fecHeader->fecShardIndex >= RTPA_FEC_SHARDS) {
             queue->stats.packetCountFecInvalid++;
             Limelog("Too many audio FEC shards: %u\n", fecHeader->fecShardIndex);
@@ -267,9 +265,8 @@ static PRTPA_FEC_BLOCK getFecBlockForRtpPacket(PRTP_AUDIO_QUEUE queue, PRTP_PACK
         }
 
         if (fecBlockBaseSeqNum % RTPA_DATA_SHARDS != 0) {
-            // The FEC blocks must start on a RTPA_DATA_SHARDS boundary for our queuing logic to work. This isn't
-            // the case for older versions of GeForce Experience (at least 3.13). Disable the FEC logic if this
-            // invariant is validated.
+            // 为了使我们的排队逻辑正常工作，FEC（前向纠错）块必须从RTPA_DATA_SHARDS（实时传输协议应用程序数据碎片）边界开始。
+            // 对于旧版本的GeForce Experience（至少是3.13版本）而言，情况并非如此。如果此不变条件得到验证，请禁用FEC逻辑。
             queue->stats.packetCountFecInvalid++;
             Limelog("Invalid FEC block base sequence number (got %u, expected %u)\n",
                     fecBlockBaseSeqNum, (fecBlockBaseSeqNum / RTPA_DATA_SHARDS) * RTPA_DATA_SHARDS);
@@ -280,17 +277,14 @@ static PRTPA_FEC_BLOCK getFecBlockForRtpPacket(PRTP_AUDIO_QUEUE queue, PRTP_PACK
         }
 
         blockSize = length - sizeof(RTP_PACKET) - sizeof(AUDIO_FEC_HEADER);
-    }
-    else {
+    } else {
         Limelog("Invalid RTP audio payload type: %u\n", packet->packetType);
         LC_ASSERT_VT(false);
         return NULL;
     }
 
-    // Synchronize the nextRtpSequenceNumber and oldestRtpBaseSequenceNumber values
-    // when the connection begins. Start on the next FEC block boundary, so we can
-    // be sure we aren't starting in the middle (which will lead to a spurious audio
-    // data block recovery warning on connection start if we miss more than 2 packets).
+    // 在连接开始时，同步nextRtpSequenceNumber和oldestRtpBaseSequenceNumber的值。
+    // 从下一个前向纠错（FEC）块边界开始，这样我们就能确保不在中间位置开始（如果丢失的数据包超过2个，则会在连接开始时出现虚假的音频数据块恢复警告）。
     if (queue->synchronizing && queue->oldestRtpBaseSequenceNumber == 0) {
         queue->nextRtpSequenceNumber = queue->oldestRtpBaseSequenceNumber = fecBlockBaseSeqNum + RTPA_DATA_SHARDS;
         return NULL;
@@ -310,7 +304,7 @@ static PRTPA_FEC_BLOCK getFecBlockForRtpPacket(PRTP_AUDIO_QUEUE queue, PRTP_PACK
             LC_ASSERT_VT(existingBlock->fecHeader.baseTimestamp == fecBlockBaseTs);
             LC_ASSERT_VT(existingBlock->fecHeader.ssrc == fecBlockSsrc);
 
-            // The block size must match in order to safely copy shards into it
+            // 为了安全地将碎片复制到块中，块的大小必须匹配
             if (existingBlock->blockSize != blockSize) {
                 // This can happen with older versions of GeForce Experience (3.13) and Sunshine that don't use a
                 // constant size for audio packets.
@@ -333,7 +327,7 @@ static PRTPA_FEC_BLOCK getFecBlockForRtpPacket(PRTP_AUDIO_QUEUE queue, PRTP_PACK
         existingBlock = existingBlock->next;
     }
 
-    // We didn't find an existing FEC block, so we'll have to allocate one
+    //我们没有找到现有的FEC块，因此我们必须分配一个
     uint16_t dataPacketSize = blockSize + sizeof(RTP_PACKET);
     PRTPA_FEC_BLOCK block = allocateFecBlock(queue, blockSize);
     if (block == NULL) {
@@ -520,30 +514,26 @@ static void handleMissingPackets(PRTP_AUDIO_QUEUE queue) {
         return;
     }
 
-    // If the packet we're waiting on precedes our earliest FEC block, a previous FEC block was completely lost.
-    // We should resynchronize immediately by advancing the queue state to play our oldest block next.
-    //
-    // NB: We do NOT want to set allowDiscontinuity here, because that will result in playing back the entire
-    // FEC block immediately but we've only received a single packet from that block. Worse still, when the
-    // remaining packets from this block arrive, they will trigger the OOS detection and kick us out of fast
-    // audio recovery mode.
+    // 如果我们正在等待的数据包位于我们最早的FEC块之前，那么之前的FEC块就完全丢失了。
+    // 我们应该立即通过推进队列状态来重新同步，以便接下来播放最旧的区块。
+    // 注意：我们不希望在此处设置allowDiscontinuity，因为这将导致立即播放整个FEC块，而我们仅从该块接收到了一个数据包。
+    // 更糟糕的是，当该块的剩余数据包到达时，它们将触发OOS检测，并使我们退出快速音频恢复模式。
     if (isBefore16(queue->nextRtpSequenceNumber, queue->blockHead->fecHeader.baseSequenceNumber)) {
         queue->nextRtpSequenceNumber = queue->blockHead->fecHeader.baseSequenceNumber;
         queue->oldestRtpBaseSequenceNumber = queue->blockHead->fecHeader.baseSequenceNumber;
         return;
     }
 
-    // If we reach this point, we know the next packet resides in the first FEC block we're
-    // currently waiting on. In that case, we want to wait at least until we have a second FEC
-    // block to give up on the first one. If we don't have a second block now, just keep waiting.
+    // 如果我们达到这一步，那么我们就知道下一个数据包位于我们当前正在等待的第一个前向纠错（FEC）块中。
+    // 在这种情况下，我们希望至少等到有第二个FEC块时再放弃第一个。如果现在还没有第二个块，那就继续等待。
     LC_ASSERT_VT(isBefore16(queue->nextRtpSequenceNumber, queue->blockHead->fecHeader.baseSequenceNumber + RTPA_DATA_SHARDS));
     if (queue->blockHead == queue->blockTail) {
         return;
     }
 
-    // At this point, we know we've got a second FEC block queued up waiting on the first one to complete.
-    // If we've never seen OOS data from this host, we'll assume the first one is lost and skip forward.
-    // If we have seen OOS data, we'll wait for a little while longer to see if OOS packets arrive before giving up.
+    // 此时，我们知道已经有第二个前向纠错（FEC）块在排队等待第一个块完成。
+    // 如果我们从未从该主机收到过OOS（缺货）数据，我们将假设第一条数据丢失，并跳过继续处理。
+    // 如果我们已经看到了OOS数据，我们会再等一会儿，看看是否有OOS数据包到达，然后再决定是否放弃。
     if (!queue->receivedOosData || PltGetMicroseconds() - queue->blockHead->queueTimeUs > (uint64_t)(AudioPacketDuration * RTPA_DATA_SHARDS) + (RTPQ_OOS_WAIT_TIME_MS * 1000)) {
         LC_ASSERT(!isBefore16(queue->nextRtpSequenceNumber, queue->blockHead->fecHeader.baseSequenceNumber));
 
@@ -644,7 +634,7 @@ int RtpaAddPacket(PRTP_AUDIO_QUEUE queue, PRTP_PACKET packet, uint16_t length) {
         return 0;
     }
 
-    // Try to complete the FEC block via data shards or data+FEC shards
+    // 尝试通过数据碎片或数据+FEC碎片来完成FEC块
     LC_ASSERT(fecBlock == queue->blockHead || queue->blockHead != queue->blockTail);
     if (completeFecBlock(queue, fecBlock)) {
         // We completed a FEC block
