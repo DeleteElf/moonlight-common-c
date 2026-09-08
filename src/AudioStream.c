@@ -477,7 +477,7 @@ int sequenceNumber=0;
 int LiSendAudioStreamEvent(const char* data, unsigned int length,unsigned  int packetType,unsigned int ssrc){
 
     RTP_PACKET packet;
-    packet.header= 0x00; // flags (1 byte)
+    packet.header= 0x80; // flags (1 byte)
     packet.packetType=  packetType; // packetType (1 byte) eg. custom OPUS encoder type
     packet.sequenceNumber=(short) (sequenceNumber++ & 0xFFFF); // sequenceNumber (2 bytes)
     uint64_t currentTime = PltGetMillis();
