@@ -475,24 +475,26 @@ int LiGetPendingAudioDuration(void) {
 
 int sequenceNumber=0;
 int LiSendAudioStreamEvent(const char* data, unsigned int length,unsigned  int packetType,unsigned int ssrc){
-
-    RTP_PACKET packet;
-    packet.header= 0x80; // flags (1 byte)
-    packet.packetType=  packetType; // packetType (1 byte) eg. custom OPUS encoder type
-    packet.sequenceNumber=(short) (sequenceNumber++ & 0xFFFF); // sequenceNumber (2 bytes)
+    int size=sizeof(RTP_PACKET);
+    int total=size+length;
+    char* buffer=(char*)malloc(total);
+    RTP_PACKET* packet=(RTP_PACKET*)buffer;
+    packet->header= 0x80; // flags (1 byte)
+    packet->packetType=  packetType; // packetType (1 byte) eg. custom OPUS encoder type
+    packet->sequenceNumber= BE16(sequenceNumber & 0xFFFF); // sequenceNumber (2 bytes)
+    sequenceNumber++;
     uint64_t currentTime = PltGetMillis();
-    packet.timestamp=(int)(currentTime & 0xFFFFFFFF);// timestamp (4 bytes)
-    packet.ssrc=ssrc;  // ssrc (4 bytes) - Synchronization Source Identifier
+    packet->timestamp=BE32(currentTime & 0xFFFFFFFF);// timestamp (4 bytes)
+    packet->ssrc=BE32(ssrc);  // ssrc (4 bytes) - Synchronization Source Identifier
 
-    int size=sizeof(packet);
-    char* buffer=(char*)malloc(size+length);
-    memcpy(buffer,&packet,size);
     memcpy(buffer+size,data,length);
 
     if(networkSendCallback!=NULL){
-        networkSendCallback(buffer,size+length,SocketChannelAudio,-1);
+        networkSendCallback(buffer,total,SocketChannelAudio,-1);
+        free(buffer);
         return 0;
     }
+    free(buffer);
     return -1;
 }
 

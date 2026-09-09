@@ -1035,7 +1035,7 @@ typedef int (*NetworkStopCallback)(int);
 
 typedef enum _SocketChannelType
 {
-    SocketChannelControl=0,
+    SocketChannelMessage=0,
     SocketChannelAudio,
     SocketChannelVideo
 } SocketChannelType;

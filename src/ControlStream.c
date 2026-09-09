@@ -518,7 +518,7 @@ static bool decryptControlMessageToV1(PNVCTL_ENCRYPTED_PACKET_HEADER encPacket, 
 
 static bool sendMessageAndForget(short ptype, short paylen, const void* payload) {
     if (networkSendCallback != NULL) {
-        networkSendCallback(payload, paylen, SocketChannelControl, ptype);
+        networkSendCallback(payload, paylen, SocketChannelMessage, ptype);
         return true;
     } else {
         Limelog("未注册网络发送回调支持！\n");
@@ -528,7 +528,7 @@ static bool sendMessageAndForget(short ptype, short paylen, const void* payload)
 
 static bool sendMessageAndDiscardReply(short ptype, short paylen, const void* payload) {
     if(networkSendCallback!=NULL){
-        networkSendCallback(payload,paylen,SocketChannelControl,ptype);
+        networkSendCallback(payload,paylen,SocketChannelMessage,ptype);
         return true ;
     }
     Limelog("未注册网络发送回调支持！\n");
@@ -970,7 +970,7 @@ static void requestIdrFrameFunc(void* context) {
 int stopControlStream(void) {
     stopping = true;
     if (networkChannelStopCallback != NULL) {
-        int ret=networkChannelStopCallback(SocketChannelControl);
+        int ret=networkChannelStopCallback(SocketChannelMessage);
         // return 0; //不再直接返回，仍要执行注销 线程逻辑
         if(ret>0){
             //考虑打印错误
