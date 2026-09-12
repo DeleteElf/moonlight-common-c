@@ -7,6 +7,7 @@ typedef struct _RTPV_QUEUE_ENTRY {
     struct _RTPV_QUEUE_ENTRY* prev;
     PRTP_PACKET packet;
     uint64_t receiveTimeUs;
+    //报告时间
     uint64_t presentationTimeUs;
     uint32_t rtpTimestamp;
     int length;

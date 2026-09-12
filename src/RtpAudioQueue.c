@@ -641,7 +641,7 @@ int RtpaAddPacket(PRTP_AUDIO_QUEUE queue, PRTP_PACKET packet, uint16_t length) {
         fecBlock->fullyReassembled = true;
     }
 
-    // If we still have nothing ready, see if we should skip the missing packets.
+    // 如果我们仍未做好准备，看看是否应该跳过缺失的数据包。
     if (!queueHasPacketReady(queue)) {
         handleMissingPackets(queue);
     }
