@@ -268,12 +268,11 @@ void destroyControlStream(void) {
 
 static void queueFrameInvalidationTuple(int trackIndex,uint32_t startFrame, uint32_t endFrame) {
     LC_ASSERT(startFrame <= endFrame);
-
     if (isReferenceFrameInvalidationEnabled()) {
         PQUEUED_REFERENCE_FRAME_CONTROL qfit;
         qfit = malloc(sizeof(*qfit));
         if (qfit != NULL) {
-            *qfit = (QUEUED_REFERENCE_FRAME_CONTROL){
+            *qfit = (QUEUED_REFERENCE_FRAME_CONTROL) {
                     .startFrame = startFrame,
                     .endFrame = endFrame,
                     .trackIndex=trackIndex,
@@ -283,16 +282,12 @@ static void queueFrameInvalidationTuple(int trackIndex,uint32_t startFrame, uint
                 // Too many invalidation tuples, so we need an IDR frame now
                 Limelog("RFI range list reached maximum size limit\n");
                 free(qfit);
-                LiRequestIdrFrame(trackIndex);
+            } else {
+                return;
             }
         }
-        else {
-            LiRequestIdrFrame(trackIndex);
-        }
     }
-    else {
-        LiRequestIdrFrame(trackIndex);
-    }
+    LiRequestIdrFrame(trackIndex);
 }
 
 // Request an IDR frame on demand by the decoder
@@ -311,8 +306,7 @@ void connectionDetectedFrameLoss(int trackIndex,uint32_t startFrame, uint32_t en
     queueFrameInvalidationTuple(trackIndex,startFrame, endFrame);
 }
 
-// When we receive a frame, update the number of our current frame
-// and send ACK control message if the frame is LTR
+// 当我们接收到一个帧时，更新当前帧的编号，如果该帧是LTR（丢失传输请求），则发送ACK（确认）控制消息
 void connectionReceivedCompleteFrame(int trackIndex,uint32_t frameIndex, bool frameIsLTR) {
     setLastGoodFrame(trackIndex,frameIndex);
 
@@ -821,23 +815,21 @@ static void lossStatsThreadFunc(void* context) {
 }
 
 static void requestIdrFrame(int trackIndex) {//todo:目前这个送得太频繁了，稍后需要控制一下速度
-    // If this server does not have a known IDR frame request
-    // message, we'll accomplish the same thing by creating a
-    // reference frame invalidation request.
+    // 如果此服务器没有已知的IDR帧请求消息，我们将通过创建参考帧失效请求来完成相同操作。
     if (!supportsIdrFrameRequest) {
-        int64_t payload[3];
+        int32_t payload[3];
         uint32_t lastSeenFrame = getLastSeenFrame(trackIndex);
         // Form the payload
         if (lastSeenFrame < 0x20) {
             payload[0] = 0;
-            payload[1] = LE64(lastSeenFrame);
+            payload[1] = LE32(lastSeenFrame);
         }
         else {
-            payload[0] = LE64(lastSeenFrame - 0x20);
-            payload[1] = LE64(lastSeenFrame);
+            payload[0] = LE32(lastSeenFrame - 0x20);
+            payload[1] = LE32(lastSeenFrame);
         }
 
-        payload[2] = trackIndex;
+        payload[2] = LE32(trackIndex);
 
         // Send the reference frame invalidation request and read the response
         if (!sendMessageAndDiscardReply(packetTypes[IDX_INVALIDATE_REF_FRAMES],
@@ -863,15 +855,15 @@ static void requestIdrFrame(int trackIndex) {//todo:目前这个送得太频繁�
     Limelog("IDR frame request sent =============> %d\n",trackIndex);
 }
 
-static void requestInvalidateReferenceFrames(uint32_t startFrame, uint32_t endFrame) {
-    int64_t payload[3];
+static void requestInvalidateReferenceFrames(uint32_t startFrame, uint32_t endFrame,uint32_t ssrc) {
+    int32_t payload[3];
 
     LC_ASSERT(startFrame <= endFrame);
     LC_ASSERT(isReferenceFrameInvalidationEnabled());
 
-    payload[0] = LE64(startFrame);
-    payload[1] = LE64(endFrame);
-    payload[2] = 0;
+    payload[0] = LE32(startFrame);
+    payload[1] = LE32(endFrame);
+    payload[2] = ssrc;
 
     // Send the reference frame invalidation request and read the response
     if (!sendMessageAndDiscardReply(packetTypes[IDX_INVALIDATE_REF_FRAMES],
@@ -938,7 +930,7 @@ static void referenceFrameControlFunc(void* context) {
 
         if (invalidate) {
             // Send the reference frame invalidation request
-            requestInvalidateReferenceFrames(invalidateStartFrame, invalidateEndFrame);
+            requestInvalidateReferenceFrames(invalidateStartFrame, invalidateEndFrame,qfit->trackIndex);
         }
     }
 }
