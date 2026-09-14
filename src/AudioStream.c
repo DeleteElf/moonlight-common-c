@@ -242,7 +242,7 @@ static void AudioReceiveThreadProc(void* context) {
             bufferPacket.len=MAX_PACKET_SIZE;
             bufferPacket.buf=&packet->data[0];
             networkReceiveCallback(&bufferPacket,SocketChannelAudio);
-            if(!StreamConfig.allowFec){//如果不允许fec，则使用直接使用数据
+            if(StreamConfig.fecInNetwork){//如果允许在网络层fec，则使用直接使用数据
                 if (bufferPacket.len == 0) {//如果底层解包失败，则直接塞入空数据给lib opus
                     AudioCallbacks.decodeAndPlaySample(NULL, 0);
                     return;

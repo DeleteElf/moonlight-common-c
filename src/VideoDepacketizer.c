@@ -327,8 +327,7 @@ void LiCompleteVideoFrame(VIDEO_FRAME_HANDLE handle, int drStatus,int trackIndex
         requestDecoderRefresh(trackIndex);
     }
     else if (drStatus == DR_OK && qdu->decodeUnit.frameType == FRAME_TYPE_IDR) {
-        // Remember that the IDR frame was processed. We can now use
-        // reference frame invalidation.
+        // 记住，IDR帧已经被处理过了。我们现在可以使用参考帧无效化。
         depacketizers->data[trackIndex].idrFrameProcessed = true;
     }
     while (qdu->decodeUnit.bufferList != NULL) {
@@ -336,7 +335,7 @@ void LiCompleteVideoFrame(VIDEO_FRAME_HANDLE handle, int drStatus,int trackIndex
         qdu->decodeUnit.bufferList = lastEntry->entry.next;
         free(lastEntry->allocPtr);
     }
-    // We will have stack-allocated entries iff we have a direct-submit decoder
+    // 只有当我们有直接提交解码器时，我们才会有堆栈分配的条目
     if ((VideoCallbacks.capabilities & CAPABILITY_DIRECT_SUBMIT) == 0) {
         free(qdu);
     }
