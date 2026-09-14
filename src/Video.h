@@ -73,16 +73,17 @@ typedef struct _SS_FRAME_FEC_STATUS {
 #define SS_LTR_FRAME_ACK_PTYPE 0x0350
 typedef struct _SS_LTR_FRAME_ACK {
     uint32_t frameIndex;
-    uint32_t reserved;
+//    uint32_t reserved;
+    uint32_t trackIndex;
 } SS_LTR_FRAME_ACK, *PSS_LTR_FRAME_ACK;
 
 // Fields are little-endian
 #define SS_RFI_REQUEST_PTYPE 0x0301
-typedef struct _SS_RFI_REQUEST {
-    uint32_t firstFrameIndex;
-    uint32_t reserved1;
-    uint32_t lastFrameIndex;
-    uint32_t reserved2[3];
-} SS_RFI_REQUEST, *PSS_RFI_REQUEST;
+//typedef struct _SS_RFI_REQUEST {
+//    uint32_t firstFrameIndex;
+//    uint32_t reserved1;
+//    uint32_t lastFrameIndex;
+//    uint32_t reserved2[3];
+//} SS_RFI_REQUEST, *PSS_RFI_REQUEST;
 
 #pragma pack(pop)

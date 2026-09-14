@@ -2,13 +2,13 @@
 
 #include <rs.h>
 
-#if defined(LC_DEBUG) && !defined(LC_FUZZING)
-// This enables FEC validation mode with a synthetic drop
-// and recovered packet checks vs the original input. It
-// is on by default for debug builds.
-#define FEC_VALIDATION_MODE
-#define FEC_VERBOSE
-#endif
+//#if defined(LC_DEBUG) && !defined(LC_FUZZING)
+//// This enables FEC validation mode with a synthetic drop
+//// and recovered packet checks vs the original input. It
+//// is on by default for debug builds.
+//#define FEC_VALIDATION_MODE
+//#define FEC_VERBOSE
+//#endif
 
 // Don't try speculative RFI for 5 minutes after seeing
 // an out of order packet or incorrect prediction
@@ -23,6 +23,14 @@ void RtpvInitializeQueue(PRTP_VIDEO_QUEUE queue) {
 
     queue->currentFrameNumber = 1;
     queue->multiFecCapable = APP_VERSION_AT_LEAST(7, 1, 431);
+    queue->lastSeenFrame=0;
+    queue->lastGoodFrame=0;
+    queue->firstFrameTimeMs=0;
+    queue->intervalGoodFrameCount=0;
+    queue->intervalTotalFrameCount=0;
+    queue->intervalStartTimeMs=0;
+    queue->lastIntervalLossPercentage=0;
+    queue->lastConnectionStatusUpdate=CONN_STATUS_OKAY;
 }
 
 static void purgeListEntries(PRTPV_QUEUE_LIST list) {
@@ -108,7 +116,7 @@ static void reportFinalFrameFecStatus(PRTP_VIDEO_QUEUE queue) {
     connectionSendFrameFecStatus(&fecStatus);
 }
 
-// newEntry is contained within the packet buffer so we free the whole entry by freeing entry->packet
+// 由于newEntry包含在数据包缓冲区中，因此我们通过释放entry->packet来释放整个条目
 static bool queuePacket(PRTP_VIDEO_QUEUE queue, PRTPV_QUEUE_ENTRY newEntry, PRTP_PACKET packet, int length, bool isParity, bool isFecRecovery) {
     PRTPV_QUEUE_ENTRY entry;
     bool outOfSequence;
@@ -116,14 +124,10 @@ static bool queuePacket(PRTP_VIDEO_QUEUE queue, PRTPV_QUEUE_ENTRY newEntry, PRTP
     LC_ASSERT(!(isFecRecovery && isParity));
     LC_ASSERT(!isBefore16(packet->sequenceNumber, queue->nextContiguousSequenceNumber));
 
-    // If the packet is in order, we can take the fast path and avoid having
-    // to loop through the whole list. If we get an out of order or missing
-    // packet, the fast path will stop working and we'll use the loop instead.
+    // 如果数据包是按顺序的，我们可以走快速通道，避免遍历整个列表。如果我们遇到乱序或缺失的数据包，快速通道将无法使用，我们将改为使用循环遍历。
     //
-    // NB: It's not enough to just check next contiguous sequence number because
-    // it's possible that we hit the OOS path earlier which doesn't update the
-    // next contiguous sequence number. If that happens, we need to use the slow
-    // path for this entire frame to avoid possibly mishandling a duplicate packet.
+    // 注意：仅检查下一个连续序列号是不够的，因为我们有可能更早地进入OOS（Out of Sequence，乱序）路径，而该路径不会更新下一个连续序列号。
+    // 如果发生这种情况，我们需要为整个帧使用慢速路径，以避免可能对重复数据包的处理不当
     if (queue->useFastQueuePath && packet->sequenceNumber == queue->nextContiguousSequenceNumber) {
         queue->nextContiguousSequenceNumber = U16(packet->sequenceNumber + 1);
         outOfSequence = false;
@@ -134,19 +138,15 @@ static bool queuePacket(PRTP_VIDEO_QUEUE queue, PRTPV_QUEUE_ENTRY newEntry, PRTP
         // Check for duplicates
         entry = queue->pendingFecBlockList.head;
         while (entry != NULL) {
-            if (packet->sequenceNumber == entry->packet->sequenceNumber) {
+            if (packet->sequenceNumber == entry->packet->sequenceNumber) {//重复的数据包不要
                 return false;
             }
-            else if (isBefore16(packet->sequenceNumber, entry->packet->sequenceNumber)) {
+            else if (isBefore16(packet->sequenceNumber, entry->packet->sequenceNumber)) {//出现更早的数据包，说明已经乱序
                 outOfSequence = true;
             }
-
             entry = entry->next;
         }
-
-        // If we make it here, we cannot use the fast queue path for this frame because
-        // we're about to queue a non-duplicate packet out of order. This will not update
-        // nextContiguousSequenceNumber which the fast path relies on.
+        // 如果我们到达这里，就不能为这个帧使用快速队列路径，因为我们即将无序地排队一个非重复数据包。这将不会更新快速路径所依赖的下一个连续序列号。
         queue->useFastQueuePath = false;
     }
 
@@ -158,27 +158,22 @@ static bool queuePacket(PRTP_VIDEO_QUEUE queue, PRTPV_QUEUE_ENTRY newEntry, PRTP
     newEntry->presentationTimeUs = ((uint64_t)packet->timestamp * 1000) / PTS_DIVISOR;
     newEntry->rtpTimestamp = packet->timestamp;
 
-    // FEC recovery packets are synthesized by us, so don't use them to determine OOS data
+    // 前向纠错（FEC）恢复包是我们合成的，因此不要用它们来确定丢失（OOS）数据
     if (!isFecRecovery) {
         if (outOfSequence) {
-            // This packet was received after a higher sequence number packet, so note that we
-            // received an out of order packet to disable our speculative RFI recovery logic.
+            // 此数据包是在一个序列号更高的数据包之后收到的，因此请注意，我们收到了一个乱序的数据包，导致我们的推测性RFI恢复逻辑被禁用。
             queue->lastOosFramePresentationTimestamp = newEntry->presentationTimeUs;
             if (!queue->receivedOosData) {
-                Limelog("Leaving speculative RFI mode after OOS video data at frame %u\n",
-                        queue->currentFrameNumber);
+                Limelog("在帧处出现OOS视频数据后退出推测性RFI模式 %u\n",queue->currentFrameNumber);
                 queue->receivedOosData = true;
             }
         }
         else if (queue->receivedOosData && newEntry->presentationTimeUs > queue->lastOosFramePresentationTimestamp + SPECULATIVE_RFI_COOLDOWN_PERIOD_US) {
-            Limelog("Entering speculative RFI mode after sequenced video data at frame %u\n",
-                    queue->currentFrameNumber);
+            Limelog("在帧处输入序列化视频数据后，进入推测性RFI模式 %u\n",queue->currentFrameNumber);
             queue->receivedOosData = false;
         }
     }
-
     insertEntryIntoList(&queue->pendingFecBlockList, newEntry);
-
     return true;
 }
 
@@ -191,7 +186,7 @@ static bool queuePacket(PRTP_VIDEO_QUEUE queue, PRTPV_QUEUE_ENTRY newEntry, PRTP
     continue
 
 // Returns 0 if the frame is completely constructed
-static int reconstructFrame(PRTP_VIDEO_QUEUE queue) {
+static int reconstructFrame(int trackIndex,PRTP_VIDEO_QUEUE queue) {
     unsigned int totalPackets = queue->bufferDataPackets + queue->bufferParityPackets;
     unsigned int neededPackets = queue->bufferDataPackets;
     int ret;
@@ -199,24 +194,21 @@ static int reconstructFrame(PRTP_VIDEO_QUEUE queue) {
     LC_ASSERT(totalPackets == U16(queue->bufferHighestSequenceNumber - queue->bufferLowestSequenceNumber) + 1U);
 
 #ifdef FEC_VALIDATION_MODE
-    // We'll need an extra packet to run in FEC validation mode, because we will
-    // be "dropping" one below and recovering it using parity. However, some frames
-    // are so large that FEC is disabled entirely, so don't wait for parity on those.
+    // 在FEC验证模式下运行时，我们需要一个额外的数据包，因为我们会“丢弃”一个数据包，
+    // 然后使用奇偶校验来恢复它。然而，有些帧太大，以至于完全禁用了FEC，所以不要等待这些帧的奇偶校验
     neededPackets += queue->fecPercentage ? 1 : 0;
 #endif
 
     LC_ASSERT(totalPackets - neededPackets <= queue->bufferParityPackets);
 
     if (queue->pendingFecBlockList.count < neededPackets) {
-        // If we've never received OOS data from this host, we can predict whether this frame will be recoverable
-        // based on the packets we've received (or not) so far. If the number of missing shards exceeds the total
-        // needed shards, there is no hope of recovering the data. The only way we could recover this frame is by
-        // receiving OOS data, which is unlikely because we've not seen any recently from this host.
-        if (isReferenceFrameInvalidationEnabled() && !queue->reportedLostFrame && !queue->receivedOosData) {
-            // NB: We use totalPackets - neededPackets instead of just bufferParityPackets here because we require
-            // one extra parity shard for recovery if we're in FEC validation mode.
+        // 如果我们从未从这个主机收到过OOS数据，那么我们可以根据目前已经收到（或未收到）的数据包来预测这个帧是否可恢复。
+        // 如果缺失的分片数量超过了所需的总分片数，那么数据就无法恢复了。
+        // 我们恢复这个帧的唯一途径就是收到OOS数据，但鉴于我们最近没有从这个主机收到任何数据，所以这种可能性很小。
+        if (!queue->reportedLostFrame && !queue->receivedOosData) {
+            // 注意：此处我们使用totalPackets - neededPackets，而不是仅仅使用bufferParityPackets，因为如果处于FEC验证模式，我们需要额外的一个奇偶校验碎片用于恢复。
             if (queue->missingPackets > totalPackets - neededPackets) {
-                notifyFrameLost(queue->currentFrameNumber, true);
+                notifyFrameLost(trackIndex,queue->currentFrameNumber, true);
                 queue->reportedLostFrame = true;
             }
             else {
@@ -224,38 +216,24 @@ static int reconstructFrame(PRTP_VIDEO_QUEUE queue) {
                 LC_ASSERT(neededPackets - queue->pendingFecBlockList.count <= U16(queue->bufferHighestSequenceNumber - queue->receivedHighestSequenceNumber));
             }
         }
-
-        // Not enough data to recover yet
-        return -1;
+        return -1;//用于fec解码的数据不足，直接返回-1，等待下个数据包
     }
 
-    // If we make it here and reported a lost frame, we lied to the host. This can happen if we happen to get
-    // unlucky and this particular frame happens to be the one with OOS data, but it should almost never happen.
+    // 如果我们在这里报告了一个丢失的帧，那我们就是对主机撒了谎。如果我们恰好运气不佳，而这个特定的帧恰好包含OOS（Out of Service，服务中断）数据，这种情况就有可能发生，但这种情况几乎不应该出现。
     LC_ASSERT(queue->missingPackets <= queue->bufferParityPackets);
     LC_ASSERT(!queue->reportedLostFrame || queue->receivedOosData);
     if (queue->reportedLostFrame && !queue->receivedOosData) {
-        // If it turns out that we lied to the host, stop further speculative RFI requests for a while.
+        // 如果事实证明我们对主办方撒了谎，那就暂时停止进一步的推测性信息请求（RFI）。
         queue->receivedOosData = true;
         queue->lastOosFramePresentationTimestamp = queue->pendingFecBlockList.head->presentationTimeUs;
         Limelog("Leaving speculative RFI mode due to incorrect loss prediction of frame %u\n", queue->currentFrameNumber);
     }
-
+ if (
 #ifdef FEC_VALIDATION_MODE
-    // If FEC is disabled or unsupported for this frame, we must bail early here.
-    if ((queue->fecPercentage == 0 || AppVersionQuad[0] < 5) &&
-            queue->receivedDataPackets == queue->bufferDataPackets) {
-#else
-    if (queue->receivedDataPackets == queue->bufferDataPackets) {
+   queue->fecPercentage == 0 &&
 #endif
-        // We've received a full frame with no need for FEC.
-        return 0;
-    }
-
-    if (AppVersionQuad[0] < 5) {
-        // Our FEC recovery code doesn't work properly until Gen 5
-        Limelog("FEC recovery not supported on Gen %d servers\n",
-                AppVersionQuad[0]);
-        return -1;
+    queue->receivedDataPackets == queue->bufferDataPackets) {// 如果此帧禁用或不支持前向纠错（FEC），我们必须在此提前退出。
+        return 0;// 接收到没有执行fec编码的数据帧
     }
 
     reed_solomon* rs = NULL;
@@ -282,8 +260,7 @@ static int reconstructFrame(PRTP_VIDEO_QUEUE queue) {
     int packetBufferSize = receiveSize + sizeof(RTPV_QUEUE_ENTRY);
 
 #ifdef FEC_VALIDATION_MODE
-    // Choose a packet to drop
-    unsigned int dropIndex = rand() % queue->bufferDataPackets;
+    unsigned int dropIndex = rand() % queue->bufferDataPackets;//随机丢弃一个数据包，不理解，理论上fec不要求丢弃的
     PRTP_PACKET droppedRtpPacket = NULL;
     int droppedRtpPacketLength = 0;
 #endif
@@ -293,9 +270,8 @@ static int reconstructFrame(PRTP_VIDEO_QUEUE queue) {
         unsigned int index = U16(entry->packet->sequenceNumber - queue->bufferLowestSequenceNumber);
 
 #ifdef FEC_VALIDATION_MODE
-        if (index == dropIndex) {
-            // If this was the drop choice, remember the original contents
-            // and "drop" it.
+        if (index == dropIndex &&queue->bufferDataPackets!=1) {
+            // 如果这是要“丢弃”的选择，请记住其原始内容并将其“丢弃”。
             droppedRtpPacket = entry->packet;
             droppedRtpPacketLength = entry->length;
             entry = entry->next;
@@ -303,7 +279,7 @@ static int reconstructFrame(PRTP_VIDEO_QUEUE queue) {
         }
 #endif
 
-        // We should never have duplicate packets enqueued
+        // 我们绝不应该让重复的数据包进入队列
         LC_ASSERT(packets[index] == NULL);
         LC_ASSERT(marks[index] != 0);
 
@@ -331,8 +307,8 @@ static int reconstructFrame(PRTP_VIDEO_QUEUE queue) {
 
     ret = reed_solomon_decode(rs, packets, marks, totalPackets, receiveSize);
 
-    // We should always provide enough parity to recover the missing data successfully.
-    // If this fails, something is probably wrong with our FEC state.
+    // 我们应始终提供足够的奇偶校验，以确保成功恢复丢失的数据。
+    // 如果这失败了，那么我们的前向纠错（FEC）状态可能出了问题。
     LC_ASSERT(ret == 0);
 
     if (queue->bufferDataPackets != queue->receivedDataPackets) {
@@ -365,10 +341,7 @@ cleanup_packets:
 
                 PNV_VIDEO_PACKET nvPacket = (PNV_VIDEO_PACKET)(((char*)rtpPacket) + dataOffset);
                 nvPacket->frameIndex = queue->currentFrameNumber;
-                nvPacket->multiFecBlocks =
-                        ((queue->multiFecLastBlockNumber << 2) | queue->multiFecCurrentBlockNumber) << 4;
-                // TODO: nvPacket->multiFecFlags?
-
+                nvPacket->multiFecBlocks =((queue->multiFecLastBlockNumber << 2) | queue->multiFecCurrentBlockNumber) << 4;
 #ifdef FEC_VALIDATION_MODE
                 if (i == dropIndex && droppedRtpPacket != NULL) {
                     // Check the packet contents if this was our known drop
@@ -438,10 +411,8 @@ cleanup_packets:
                     PACKET_RECOVERY_FAILURE();
                 }
 
-                // FEC recovered frames may have extra zero padding at the end. This is
-                // fine per H.264 Annex B which states trailing zero bytes must be
-                // discarded by decoders. It's not safe to strip all zero padding because
-                // it may be a legitimate part of the H.264 bytestream.
+                // 前向纠错（FEC）恢复的帧可能在末尾有额外的零填充。根据H.264附录B的规定，解码器必须丢弃尾随的零字节，因此这样做是可以的。
+                // 但去除所有零填充并不安全，因为零填充可能是H.264字节流中的合法部分。
 
                 LC_ASSERT(isBefore16(rtpPacket->sequenceNumber, queue->bufferFirstParitySequenceNumber));
                 queuePacket(queue, queueEntry, rtpPacket, StreamConfig.packetSize + dataOffset, false, true);
@@ -476,21 +447,13 @@ static void stageCompleteFecBlock(PRTP_VIDEO_QUEUE queue) {
             LC_ASSERT(!isBefore16(entry->packet->sequenceNumber, nextSeqNum));
 
             // Never return parity packets
-            if (entry->isParity) {
+            if (entry->isParity) {//如果是奇偶校验数据，则直接接上下一个
                 PRTPV_QUEUE_ENTRY parityEntry = entry;
-
-                // Skip this entry
-                entry = parityEntry->next;
-
-                // Remove this entry
-                removeEntryFromList(&queue->pendingFecBlockList, parityEntry);
-
-                // Free the entry and packet
-                free(parityEntry->packet);
-
+                entry = parityEntry->next;// Skip this entry
+                removeEntryFromList(&queue->pendingFecBlockList, parityEntry);                // Remove this entry
+                free(parityEntry->packet);                // Free the entry and packet
                 continue;
             }
-
             // Check for the next packet in sequence. This will be O(1) for non-reordered packet streams.
             if (entry->packet->sequenceNumber == nextSeqNum) {
                 removeEntryFromList(&queue->pendingFecBlockList, entry);
@@ -524,7 +487,7 @@ static void stageCompleteFecBlock(PRTP_VIDEO_QUEUE queue) {
     }
 }
 
-static void submitCompletedFrame(PRTP_VIDEO_QUEUE queue) {
+static void submitCompletedFrame(int trackIndex,PRTP_VIDEO_QUEUE queue) {
     while (queue->completedFecBlockList.count > 0) {
         PRTPV_QUEUE_ENTRY entry = queue->completedFecBlockList.head;
 
@@ -533,7 +496,7 @@ static void submitCompletedFrame(PRTP_VIDEO_QUEUE queue) {
 
         // Submit this packet for decoding. It will own freeing the entry now.
         removeEntryFromList(&queue->completedFecBlockList, entry);
-        queueRtpPacket(entry);
+        queueRtpPacket(trackIndex,entry);
     }
 }
 
@@ -548,8 +511,9 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
     }
 
     // FLAG_EXTENSION is required for all supported versions of GFE.
-    LC_ASSERT_VT(packet->header & FLAG_EXTENSION);
-
+    if(queue->currentFrameNumber==1 && (packet->header & FLAG_EXTENSION)==0) //如果是首个数据包，则丢弃
+        return RTPF_RET_REJECTED;
+    //LC_ASSERT_VT(packet->header & FLAG_EXTENSION);//这里经常会在首个数据包收到一个  没有GFE版本支持的数据包，暂时还不知道原因，但是影响调试，先注释
     int dataOffset = sizeof(*packet);
     if (packet->header & FLAG_EXTENSION) {
         dataOffset += 4; // 2 additional fields
@@ -581,7 +545,7 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
     }
 #endif
 
-    uint32_t fecIndex = (nvPacket->fecInfo & 0x3FF000) >> 12;
+    uint32_t fecIndex =(nvPacket->fecInfo >>12)& 0x3FF;// (nvPacket->fecInfo & 0x3FF000) >> 12;
     uint8_t fecCurrentBlockNumber = (nvPacket->multiFecBlocks >> 4) & 0x3;
 
     if (nvPacket->frameIndex == queue->currentFrameNumber && fecCurrentBlockNumber < queue->multiFecCurrentBlockNumber) {
@@ -589,8 +553,7 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
         return RTPF_RET_REJECTED;
     }
 
-    // Reinitialize the queue if it's empty after a frame delivery or
-    // if we can't finish a frame before receiving the next one.
+    //如果在帧传递后队列为空，或者我们在接收下一个帧之前无法完成当前帧，则重新初始化队列
     if (queue->pendingFecBlockList.count == 0 || queue->currentFrameNumber != nvPacket->frameIndex ||
             queue->multiFecCurrentBlockNumber != fecCurrentBlockNumber) {
         if (queue->pendingFecBlockList.count != 0) {
@@ -616,14 +579,12 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
 
                     // Notify the host of the loss of this frame
                     if (!queue->reportedLostFrame) {
-                        notifyFrameLost(queue->currentFrameNumber, false);
+                        notifyFrameLost(packet->ssrc,queue->currentFrameNumber, false);
+                        queue->reportedLostFrame = true;
                     }
 
-                    // NB: We reset reportedLostFrame here because we don't want to suppress
-                    // the reporting of the _next_ frame if it's lost.
                     queue->currentFrameNumber++;
                     queue->multiFecCurrentBlockNumber = 0;
-                    queue->reportedLostFrame = false;
                     return RTPF_RET_REJECTED;
                 }
             }
@@ -636,8 +597,7 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
             }
         }
 
-        // We must either start on the current FEC block number for the current frame,
-        // or block 0 of a new frame.
+        // 我们必须从当前帧的当前FEC块编号开始，或者从新帧的块0开始。
         uint8_t expectedFecBlockNumber = (queue->currentFrameNumber == nvPacket->frameIndex ? queue->multiFecCurrentBlockNumber : 0);
         if (fecCurrentBlockNumber != expectedFecBlockNumber) {
             // Report the final status of the FEC queue before dropping this frame
@@ -654,16 +614,13 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
 
             // Notify the host of the loss of this frame
             if (!queue->reportedLostFrame) {
-                notifyFrameLost(nvPacket->frameIndex, false);
+                notifyFrameLost(packet->ssrc,queue->currentFrameNumber, false);
+                queue->reportedLostFrame = true;
             }
 
             // We dropped a block of this frame, so we must skip to the next one.
-            //
-            // NB: We reset reportedLostFrame here because we don't want to suppress
-            // the reporting of the _next_ frame if it's lost.
             queue->currentFrameNumber = nvPacket->frameIndex + 1;
             queue->multiFecCurrentBlockNumber = 0;
-            queue->reportedLostFrame = false;
             return RTPF_RET_REJECTED;
         }
 
@@ -684,10 +641,8 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
             // If the frame immediately preceding this one was lost, we may have already
             // reported it using our speculative RFI logic. Don't report it again.
             if (queue->currentFrameNumber + 1 != nvPacket->frameIndex || !queue->reportedLostFrame) {
-                // NB: We only have to notify for the most recent lost frame, since
-                // the depacketizer will report the RFI range starting at the last
-                // frame it saw.
-                notifyFrameLost(nvPacket->frameIndex - 1, false);
+                //我们只需通知最近丢失的帧，因为解包器会报告从它最后看到的帧开始的RFI范围。
+                notifyFrameLost(packet->ssrc, nvPacket->frameIndex - 1, false);
             }
         }
 
@@ -695,7 +650,7 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
 
         // Tell the control stream logic about this frame, even if we don't end up
         // being able to reconstruct a full frame from it.
-        connectionSawFrame(queue->currentFrameNumber);
+        connectionSawFrame(queue);
 
         queue->bufferFirstRecvTimeUs = PltGetMicroseconds();
         queue->bufferLowestSequenceNumber = U16(packet->sequenceNumber - fecIndex);
@@ -706,8 +661,8 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
         queue->missingPackets = 0;
         queue->useFastQueuePath = true;
         queue->reportedLostFrame = false;
-        queue->bufferDataPackets = (nvPacket->fecInfo & 0xFFC00000) >> 22;
-        queue->fecPercentage = (nvPacket->fecInfo & 0xFF0) >> 4;
+        queue->bufferDataPackets = (nvPacket->fecInfo >>22)& 0x3FF; //(nvPacket->fecInfo & 0xFFC00000) >> 22;
+        queue->fecPercentage = (nvPacket->fecInfo >>4)& 0x7F; //(nvPacket->fecInfo & 0xFF0) >> 4;
         queue->bufferParityPackets = (queue->bufferDataPackets * queue->fecPercentage + 99) / 100;
         queue->bufferFirstParitySequenceNumber = U16(queue->bufferLowestSequenceNumber + queue->bufferDataPackets);
         queue->bufferHighestSequenceNumber = U16(queue->bufferFirstParitySequenceNumber + queue->bufferParityPackets - 1);
@@ -724,8 +679,8 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
     }
 
     LC_ASSERT_VT(!queue->fecPercentage || U16(packet->sequenceNumber - fecIndex) == queue->bufferLowestSequenceNumber);
-    LC_ASSERT_VT((nvPacket->fecInfo & 0xFF0) >> 4 == queue->fecPercentage);
-    LC_ASSERT_VT((nvPacket->fecInfo & 0xFFC00000) >> 22 == queue->bufferDataPackets);
+    LC_ASSERT_VT((nvPacket->fecInfo >>4& 0x7F) == queue->fecPercentage);
+    LC_ASSERT_VT((nvPacket->fecInfo >>22& 0x3FF) == queue->bufferDataPackets);
 
     // Verify that the legacy non-multi-FEC compatibility code works
     LC_ASSERT_VT(queue->multiFecCapable || fecCurrentBlockNumber == 0);
@@ -775,30 +730,31 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
 
         // Try to submit this frame. If we haven't received enough packets,
         // this will fail and we'll keep waiting.
-        if (reconstructFrame(queue) == 0) {
+        if (reconstructFrame(packet->ssrc, queue) == 0) { //使用fec解码数据，尝试读取完整的帧
+            int trackIndex=packet->ssrc;//packet 稍后销毁
             // Stage the complete FEC block for use once reassembly is complete
-            stageCompleteFecBlock(queue);
+            stageCompleteFecBlock(queue);//将完整的帧加入到已经完成FecBlock的列表中 queue->completedFecBlockList
 
             // stageCompleteFecBlock() should have consumed all pending FEC data
             LC_ASSERT(queue->pendingFecBlockList.head == NULL);
             LC_ASSERT(queue->pendingFecBlockList.tail == NULL);
             LC_ASSERT(queue->pendingFecBlockList.count == 0);
 
-            // If we're not yet at the last FEC block for this frame, move on to the next block.
-            // Otherwise, the frame is complete and we can move on to the next frame.
+            // 如果我们还没有到达这一帧的最后一个前向纠错（FEC）块，那么就继续处理下一个块。
+            // 否则，该帧已完成，我们可以继续处理下一帧。
             if (queue->multiFecCurrentBlockNumber < queue->multiFecLastBlockNumber) {
                 // Move on to the next FEC block for this frame
                 queue->multiFecCurrentBlockNumber++;
             }
             else {
                 // Submit all FEC blocks to the depacketizer
-                submitCompletedFrame(queue);
+                submitCompletedFrame(trackIndex,queue);
 
                 // submitCompletedFrame() should have consumed all completed FEC data
                 LC_ASSERT(queue->completedFecBlockList.head == NULL);
                 LC_ASSERT(queue->completedFecBlockList.tail == NULL);
                 LC_ASSERT(queue->completedFecBlockList.count == 0);
-
+//                Limelog("解包器【%d】解包完成：%d\n",trackIndex,queue->currentFrameNumber);
                 // Continue to the next frame
                 queue->currentFrameNumber++;
                 queue->multiFecCurrentBlockNumber = 0;

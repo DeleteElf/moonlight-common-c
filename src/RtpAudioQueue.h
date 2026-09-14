@@ -4,8 +4,7 @@
 
 typedef struct _reed_solomon reed_solomon;
 
-// Maximum time to wait for an OOS data/FEC shard
-// after the entire FEC block should have been received
+// 在应已收到整个FEC块后，等待OOS数据/FEC分片的最长时间
 #define RTPQ_OOS_WAIT_TIME_MS 10
 
 #define RTPA_DATA_SHARDS 4

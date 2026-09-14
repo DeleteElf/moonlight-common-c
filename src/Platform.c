@@ -316,7 +316,8 @@ int PltCreateThread(const char* name, ThreadEntry entry, void* context, PLT_THRE
 
 int PltCreateEvent(PLT_EVENT* event) {
 #if defined(LC_WINDOWS)
-    *event = CreateEvent(NULL, TRUE, FALSE, NULL);
+    *event = CreateEventEx(NULL, NULL, CREATE_EVENT_MANUAL_RESET, EVENT_ALL_ACCESS);
+    //*event = CreateEvent(NULL, TRUE, FALSE, NULL); //todo:官方最新版本，还要看一下区别
     if (!*event) {
         return -1;
     }
@@ -619,12 +620,6 @@ int initializePlatform(void) {
     if (err != 0) {
         return err;
     }
-
-    err = enet_initialize();
-    if (err != 0) {
-        return err;
-    }
-
     enterLowLatencyMode();
 
     return 0;
@@ -634,8 +629,6 @@ void cleanupPlatform(void) {
     exitLowLatencyMode();
 
     cleanupPlatformSockets();
-
-    enet_deinitialize();
 
     LC_ASSERT(activeThreads == 0);
     LC_ASSERT(activeMutexes == 0);
