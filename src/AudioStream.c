@@ -141,9 +141,7 @@ static bool queuePacketToLbq(PQUEUED_AUDIO_PACKET* packet) {
 }
 
 static void decodeInputData(PQUEUED_AUDIO_PACKET packet) {
-    // If the packet size is zero, this is a placeholder for a missing
-    // packet. Trigger packet loss concealment logic in libopus by
-    // invoking the decoder with a NULL buffer.
+    // 如果数据包大小为0，则表示这是一个缺失数据包的占位符。通过调用解码器并传入一个NULL缓冲区，在libopus中触发数据包丢失隐藏逻辑。
     if (packet->header.size == 0) {
         AudioCallbacks.decodeAndPlaySample(NULL, 0);
         return;
@@ -242,17 +240,39 @@ static void AudioReceiveThreadProc(void* context) {
             bufferPacket.len=MAX_PACKET_SIZE;
             bufferPacket.buf=&packet->data[0];
             networkReceiveCallback(&bufferPacket,SocketChannelAudio);
-            if(StreamConfig.fecInNetwork){//如果允许在网络层fec，则使用直接使用数据
-                if (bufferPacket.len == 0) {//如果底层解包失败，则直接塞入空数据给lib opus
-                    AudioCallbacks.decodeAndPlaySample(NULL, 0);
-                    return;
+            if(StreamConfig.fecInNetwork) {//如果允许在网络层fec，则使用直接使用数据
+                int fecLevel = 2;
+                switch (fecLevel) {
+                    case 2://FecDepacketizeKeepRtpPacket
+                        if ( bufferPacket.len == 12) {//如果底层解包失败，则直接塞入空数据给lib opus
+                            Limelog("收到空的音频数据包，数据包长度：%d\n",bufferPacket.len);
+                            AudioCallbacks.decodeAndPlaySample(NULL, 0);
+                            return;
+                        }
+                        PRTP_PACKET rtp = (PRTP_PACKET)&bufferPacket.buf[0];
+                        rtp->sequenceNumber = BE16(rtp->sequenceNumber);
+//                        rtp->timestamp = BE32(rtp->timestamp);
+//                        rtp->ssrc = BE32(rtp->ssrc);
+                        if (lastSeq != 0 && (unsigned short)(lastSeq + 1) != rtp->sequenceNumber) {
+                            Limelog("网络丢弃了音频数据（预期为[%d]，但实际收到[%d]）\n", lastSeq + 1, rtp->sequenceNumber);
+                        }
+                        lastSeq = rtp->sequenceNumber;
+                        AudioCallbacks.decodeAndPlaySample((char*)(rtp + 1), bufferPacket.len - sizeof(*rtp));
+                        continue;
+                    case 3://FecDepacketizeKeepRtpData
+                        if (bufferPacket.len == 0) {//如果底层解包失败，则直接塞入空数据给lib opus
+                            AudioCallbacks.decodeAndPlaySample(NULL, 0);
+                            return;
+                        }
+                        AudioCallbacks.decodeAndPlaySample(bufferPacket.buf,bufferPacket.len);
+                        continue;
+                    default:
+                        break;
                 }
-//                LC_ASSERT_VT(bufferPacket.buf[0] == opusHeaderByte);
-                AudioCallbacks.decodeAndPlaySample(bufferPacket.buf,bufferPacket.len);
-                continue;
+                return;
             }
             if (bufferPacket.len<=0) {
-                Limelog("接收音频数据失败\n", (int)LastSocketError());
+                Limelog("接收音频数据失败\n");
                 ListenerCallbacks.connectionTerminated(LastSocketFail());
                 break;
             }
@@ -268,25 +288,19 @@ static void AudioReceiveThreadProc(void* context) {
         }
         else if (packet->header.size == 0) {
             // Receive timed out; try again
-
             if (!receivedDataFromPeer) {
                 waitingForAudioMs += UDP_RECV_POLL_TIMEOUT_MS;
             }
             else {
-                // If we hit this path, there are no queued audio packets on the host PC,
-                // so we don't need to drop anything.
+                // If we hit this path, there are no queued audio packets on the host PC, so we don't need to drop anything.
                 packetsToDrop = 0;
             }
             continue;
         }
-
         if (packet->header.size < (int)sizeof(RTP_PACKET)) {
-            // Runt packet
             continue;
         }
-
         rtp = (PRTP_PACKET)&packet->data[0];
-
         if (!receivedDataFromPeer) {
             receivedDataFromPeer = true;
             Limelog("Received first audio packet after %d ms\n", waitingForAudioMs);
@@ -296,10 +310,8 @@ static void AudioReceiveThreadProc(void* context) {
                 // We're already dropping 500ms of audio so this probably doesn't matter
                 packetsToDrop += (uint32_t)(PltGetMillis() - firstReceiveTime) / AudioPacketDuration;
             }
-
             Limelog("Initial audio resync period: %d milliseconds\n", packetsToDrop * AudioPacketDuration);
         }
-
         // GFE accumulates audio samples before we are ready to receive them, so
         // we will drop the ones that arrived before the receive thread was ready.
         if (packetsToDrop > 0) {
@@ -309,7 +321,6 @@ static void AudioReceiveThreadProc(void* context) {
             }
             continue;
         }
-
         // Convert fields to host byte-order
         rtp->sequenceNumber = BE16(rtp->sequenceNumber);
         rtp->timestamp = BE32(rtp->timestamp);
@@ -369,7 +380,6 @@ static void AudioReceiveThreadProc(void* context) {
             }
         }
     }
-
     if (packet != NULL) {
         free(packet);
     }
