@@ -23,8 +23,7 @@
 void RtpaInitializeQueue(PRTP_AUDIO_QUEUE queue) {
     memset(queue, 0, sizeof(*queue));
 
-    // We will start in the synchronizing state, where we wait for the first
-    // full FEC block before reporting losses, out of order packets, etc.
+    // 我们将从同步状态开始，在此状态下，我们会等待第一个完整的FEC块，然后再报告丢失、乱序数据包等情况。
     queue->synchronizing = true;
 
     // Older versions of GFE violate some invariants that our FEC code requires, so we turn it off for
@@ -155,7 +154,7 @@ static void freeFecBlockHead(PRTP_AUDIO_QUEUE queue) {
 
     queue->oldestRtpBaseSequenceNumber = blockHead->fecHeader.baseSequenceNumber + RTPA_DATA_SHARDS;
 
-    // Once we complete an FEC block (successfully or not), we're synchronized with the source
+    // 一旦我们完成一个FEC块（无论是否成功），我们就与源同步了
     queue->synchronizing = false;
 
     validateFecBlockState(queue);
@@ -213,25 +212,22 @@ static PRTPA_FEC_BLOCK getFecBlockForRtpPacket(PRTP_AUDIO_QUEUE queue, PRTP_PACK
 
         queue->stats.packetCountAudio++;
 
-        // Remember if we've received out-of-sequence packets lately. We can use
-        // this knowledge to more quickly give up on FEC blocks.
+        // 记住我们最近是否收到了乱序的数据包。我们可以利用这些信息更快地放弃前向纠错（FEC）块。
         if (!queue->synchronizing && isBefore16(packet->sequenceNumber, queue->oldestRtpBaseSequenceNumber)) {
             queue->lastOosSequenceNumber = packet->sequenceNumber;
             queue->stats.packetCountOOS++;
             if (!queue->receivedOosData) {
-                Limelog("Leaving fast audio recovery mode after OOS audio data (%u < %u)\n",
-                        packet->sequenceNumber, queue->oldestRtpBaseSequenceNumber);
+                Limelog("Leaving fast audio recovery mode after OOS audio data (%u < %u)\n",packet->sequenceNumber, queue->oldestRtpBaseSequenceNumber);
                 queue->receivedOosData = true;
             }
         }
-        // This condition looks odd, but it's just a simple way to check if we've gone
-        // more than 32767 packets without an OOS packet.
+        // 这个条件看起来很奇怪，但它只是用来检查我们是否在没有OOS数据包的情况下发送了超过32767个数据包的一种简单方法。
         else if (queue->receivedOosData && isBefore16(queue->oldestRtpBaseSequenceNumber, queue->lastOosSequenceNumber)) {
             Limelog("Entering fast audio recovery mode after sequenced audio data\n");
             queue->receivedOosData = false;
         }
 
-        // This is a data packet, so we will need to synthesize an FEC header
+        // 这是一个数据包，因此我们需要合成一个前向纠错（FEC）报头
         fecBlockPayloadType = packet->packetType;
         fecBlockBaseSeqNum = (packet->sequenceNumber / RTPA_DATA_SHARDS) * RTPA_DATA_SHARDS;
         fecBlockBaseTs = packet->timestamp - ((packet->sequenceNumber - fecBlockBaseSeqNum) * AudioPacketDuration);
@@ -555,9 +551,7 @@ static void handleMissingPackets(PRTP_AUDIO_QUEUE queue) {
 
 int RtpaAddPacket(PRTP_AUDIO_QUEUE queue, PRTP_PACKET packet, uint16_t length) {
     if (queue->incompatibleServer) {
-        // Just feed audio data straight through to the decoder. We lose handling of out-of-order
-        // and duplicated packets in this mode, but it shouldn't be a problem for the very small
-        // portion of users that are running an ancient GFE or Sunshine version.
+        //只需将音频数据直接输入解码器即可。在此模式下，我们无法处理乱序和重复的数据包，但对于极少数运行旧版GFE或Sunshine的用户来说，这应该不是问题。
         if (packet->packetType == RTP_PAYLOAD_TYPE_AUDIO) {
             return RTPQ_RET_HANDLE_NOW;
         }
@@ -652,25 +646,20 @@ int RtpaAddPacket(PRTP_AUDIO_QUEUE queue, PRTP_PACKET packet, uint16_t length) {
 PRTP_PACKET RtpaGetQueuedPacket(PRTP_AUDIO_QUEUE queue, uint16_t customHeaderLength, uint16_t* length) {
     validateFecBlockState(queue);
 
-    // If we're returning audio data even with discontinuities, we'll fill in blank entries
-    // for packets that were lost and could not be recovered.
+    // 如果我们返回的音频数据中包含不连续的部分，那么对于丢失且无法恢复的数据包，我们将填写空白条目。
     if (queue->blockHead != NULL && queue->blockHead->allowDiscontinuity) {
         PRTPA_FEC_BLOCK nextBlock = queue->blockHead;
         PRTP_PACKET lostPacket;
 
         LC_ASSERT(nextBlock->fecHeader.baseSequenceNumber + nextBlock->nextDataPacketIndex == queue->nextRtpSequenceNumber);
         if (nextBlock->marks[nextBlock->nextDataPacketIndex]) {
-            // This packet is missing. Return an empty entry to let the caller
-            // know to perform packet loss concealment for this frame.
+            // 此数据包丢失。返回一个空条目，以告知调用方对此帧执行数据包丢失隐藏。
             lostPacket = malloc(customHeaderLength);
             if (lostPacket == NULL) {
                 return NULL;
             }
-
-            // Lost packet placeholder entries have no associated data
+            // 丢失的数据包占位符条目没有关联的数据
             *length = 0;
-
-            // Move on to the next data shard
             nextBlock->nextDataPacketIndex++;
             queue->nextRtpSequenceNumber++;
         }
@@ -679,7 +668,7 @@ PRTP_PACKET RtpaGetQueuedPacket(PRTP_AUDIO_QUEUE queue, uint16_t customHeaderLen
             LC_ASSERT(queueHasPacketReady(queue));
         }
 
-        // If we've read everything from this FEC block, remove and free it
+        // 如果我们已经读取了此FEC块中的所有内容，则将其移除并释放
         if (nextBlock->nextDataPacketIndex == RTPA_DATA_SHARDS) {
             freeFecBlockHead(queue);
         }
@@ -692,7 +681,7 @@ PRTP_PACKET RtpaGetQueuedPacket(PRTP_AUDIO_QUEUE queue, uint16_t customHeaderLen
         }
     }
 
-    // Return the next RTP sequence number by indexing into the most recent FEC block
+    // 通过索引到最近的FEC块来返回下一个RTP序列号
     if (queueHasPacketReady(queue)) {
         PRTPA_FEC_BLOCK nextBlock = queue->blockHead;
         PRTP_PACKET packet = malloc(customHeaderLength + sizeof(RTP_PACKET) + nextBlock->blockSize);

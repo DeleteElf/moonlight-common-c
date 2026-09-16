@@ -241,35 +241,21 @@ static void AudioReceiveThreadProc(void* context) {
             bufferPacket.buf=&packet->data[0];
             networkReceiveCallback(&bufferPacket,SocketChannelAudio);
             if(StreamConfig.fecInNetwork) {//如果允许在网络层fec，则使用直接使用数据
-                int fecLevel = 2;
-                switch (fecLevel) {
-                    case 2://FecDepacketizeKeepRtpPacket
-                        if ( bufferPacket.len == 12) {//如果底层解包失败，则直接塞入空数据给lib opus
-                            Limelog("收到空的音频数据包，数据包长度：%d\n",bufferPacket.len);
-                            AudioCallbacks.decodeAndPlaySample(NULL, 0);
-                            return;
-                        }
-                        PRTP_PACKET rtp = (PRTP_PACKET)&bufferPacket.buf[0];
-                        rtp->sequenceNumber = BE16(rtp->sequenceNumber);
+                PRTP_PACKET rtp = (PRTP_PACKET) &bufferPacket.buf[0];
+                rtp->sequenceNumber = BE16(rtp->sequenceNumber);
 //                        rtp->timestamp = BE32(rtp->timestamp);
 //                        rtp->ssrc = BE32(rtp->ssrc);
-                        if (lastSeq != 0 && (unsigned short)(lastSeq + 1) != rtp->sequenceNumber) {
-                            Limelog("网络丢弃了音频数据（预期为[%d]，但实际收到[%d]）\n", lastSeq + 1, rtp->sequenceNumber);
-                        }
-                        lastSeq = rtp->sequenceNumber;
-                        AudioCallbacks.decodeAndPlaySample((char*)(rtp + 1), bufferPacket.len - sizeof(*rtp));
-                        continue;
-                    case 3://FecDepacketizeKeepRtpData
-                        if (bufferPacket.len == 0) {//如果底层解包失败，则直接塞入空数据给lib opus
-                            AudioCallbacks.decodeAndPlaySample(NULL, 0);
-                            return;
-                        }
-                        AudioCallbacks.decodeAndPlaySample(bufferPacket.buf,bufferPacket.len);
-                        continue;
-                    default:
-                        break;
+                if (lastSeq != 0 && (unsigned short) (lastSeq + 1) != rtp->sequenceNumber) {
+                    Limelog("网络丢弃了音频数据（预期为[%d]，但实际收到[%d]）\n", lastSeq + 1, rtp->sequenceNumber);
                 }
-                return;
+                lastSeq = rtp->sequenceNumber;
+                if (bufferPacket.len == 12) {//如果底层解包失败，则直接塞入空数据给lib opus
+                    Limelog("收到空的音频数据包，数据包长度：%d\n", bufferPacket.len);
+                    AudioCallbacks.decodeAndPlaySample(NULL, 0);
+                }else {
+                    AudioCallbacks.decodeAndPlaySample((char *) (rtp + 1), bufferPacket.len - sizeof(*rtp));
+                }
+                continue;
             }
             if (bufferPacket.len<=0) {
                 Limelog("接收音频数据失败\n");
