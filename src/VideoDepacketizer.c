@@ -1216,7 +1216,7 @@ void queueRtpPacket(int trackIndex,PRTPV_QUEUE_ENTRY queueEntryPtr) {
                       &existingEntry);
 
     if (existingEntry != NULL) {
-      free(existingEntry->allocPtr);// processRtpPayload 不需要这个数据包，丢弃它
+      free(existingEntry->allocPtr);// 不需要这个数据包，丢弃它
     }
 }
 
