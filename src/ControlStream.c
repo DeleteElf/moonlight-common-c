@@ -1173,6 +1173,7 @@ int startControlStream(int channelCount) {
     }
 
     // Only create the reference frame invalidation thread if RFI is enabled
+//    if (isReferenceFrameInvalidationEnabled() && !StreamConfig.fecInNetwork) {
     if (isReferenceFrameInvalidationEnabled()) {
         err = PltCreateThread("InvRefFrames", referenceFrameControlFunc, NULL, &invalidateRefFramesThread);
         if (err != 0) {
