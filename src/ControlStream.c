@@ -885,9 +885,7 @@ static void confirmLongtermReferenceFrame(uint32_t trackIndex,uint32_t frameInde
     };
 
     // Send LTR frame ACK and don't wait for response
-    if (!sendMessageAndForget(SS_LTR_FRAME_ACK_PTYPE,
-                              sizeof(payload),
-                              &payload)) {
+    if (!sendMessageAndForget(SS_LTR_FRAME_ACK_PTYPE,sizeof(payload), &payload)) {
         Limelog("LTR frame ACK: Transaction failed: %d\n", (int)LastSocketError());
         ListenerCallbacks.connectionTerminated(LastSocketFail());
         return;
@@ -925,10 +923,8 @@ static void referenceFrameControlFunc(void* context) {
                     trackState->endFrame = qfit->endFrame;
                 }
             }
-            else {
-                // Send LTR frame ACK
-                if(!StreamConfig.fecInNetwork)
-                  confirmLongtermReferenceFrame(qfit->trackIndex, qfit->startFrame);
+            else { // Send LTR frame ACK
+                confirmLongtermReferenceFrame(qfit->trackIndex, qfit->startFrame);
             }
             free(qfit);
         } while (LbqPollQueueElement(&referenceFrameControlQueue, (void**)&qfit) == LBQ_SUCCESS);
