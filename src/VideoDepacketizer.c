@@ -1112,7 +1112,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
         if (depacketizer->waitingForIdrFrame || depacketizer->waitingForRefInvalFrame) {
             // IDR wait takes priority over RFI wait (and an IDR frame will satisfy both)
             if (depacketizer->waitingForIdrFrame) {
-                Limelog("等待IDR关键帧=================>track index: %d\n",depacketizer->trackIndex);
+                Limelog("等待IDR关键帧=================>ssrc: %d\n",depacketizer->trackIndex);
 
                 // We wait for the first fully received frame after a loss to approximate
                 // detection of the recovery of the network. Requesting an IDR frame while
@@ -1124,7 +1124,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
             else {
                 // If we need an RFI frame first, then drop this frame
                 // and update the reference frame invalidation window.
-                Limelog("等待RFI帧（参考帧）\n");
+                Limelog("等待RFI帧（参考帧）,ssrc:%d\n",depacketizer->trackIndex);
                 connectionDetectedFrameLoss(depacketizer->trackIndex,depacketizer->startFrameNumber, frameIndex);
             }
 
