@@ -883,7 +883,7 @@ int LiSendKeyboardEvent2(short keyCode, char keyAction, char modifiers, char fla
     holder->packet.keyboard.flags = IS_SUNSHINE() ? flags : 0;
     holder->packet.keyboard.keyCode = LE16(keyCode);
     holder->packet.keyboard.modifiers = modifiers;
-    holder->packet.keyboard.zero2 = displayIndex; //目前zero2 没有被应用，我们利用这个传递显示索引
+    holder->packet.keyboard.displayIndex = displayIndex;
 
     err = LbqOfferQueueItem(&packetQueue, holder, &holder->entry);
     if (err != LBQ_SUCCESS) {
