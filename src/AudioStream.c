@@ -393,33 +393,32 @@ void stopAudioStream(void) {
     if (!receivedDataFromPeer) {
         Limelog("No audio traffic was ever received from the host!\n");
     }
-    Limelog("正在执行关闭音频，step1\n");
+//    Limelog("正在执行关闭音频，step1\n");
     AudioCallbacks.stop();
-    Limelog("正在执行关闭音频，step2\n");
+//    Limelog("正在执行关闭音频，step2\n");
     PltInterruptThread(&receiveThread);
-
     if ((AudioCallbacks.capabilities & CAPABILITY_DIRECT_SUBMIT) == 0) {
-        Limelog("正在执行关闭音频，step3\n");
+//        Limelog("正在执行关闭音频，step3\n");
         // Signal threads waiting on the LBQ
         LbqSignalQueueShutdown(&packetQueue);
         PltInterruptThread(&decoderThread);
     }
      if (networkChannelStopCallback != NULL) {
-         Limelog("正在执行关闭音频，step4\n");
+//         Limelog("正在执行关闭音频，step4\n");
          int ret=networkChannelStopCallback(SocketChannelAudio);
          if(ret>0){
              //考虑打印错误
          }
      }
-    Limelog("正在执行关闭音频，step5\n");
+//    Limelog("正在执行关闭音频，step5\n");
     PltJoinThread(&receiveThread);
     if ((AudioCallbacks.capabilities & CAPABILITY_DIRECT_SUBMIT) == 0) {
-        Limelog("正在执行关闭音频，step6\n");
+//        Limelog("正在执行关闭音频，step6\n");
         PltJoinThread(&decoderThread);
     }
-    Limelog("正在执行关闭音频，step7\n");
+//    Limelog("正在执行关闭音频，step7\n");
     AudioCallbacks.cleanup();
-    Limelog("正在执行关闭音频，step8\n");
+//    Limelog("正在执行关闭音频，step8\n");
 }
 
 int startAudioStream(void* audioContext, int arFlags) {
