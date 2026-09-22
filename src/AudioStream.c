@@ -240,7 +240,7 @@ static void AudioReceiveThreadProc(void* context) {
             bufferPacket.len=MAX_PACKET_SIZE;
             bufferPacket.buf=&packet->data[0];
             networkReceiveCallback(&bufferPacket,SocketChannelAudio);
-            if(StreamConfig.fecInNetwork) {//如果允许在网络层fec，则使用直接使用数据
+            if(StreamConfig.fecLevel) {//如果允许在网络层fec，则使用直接使用数据
                 PRTP_PACKET rtp = (PRTP_PACKET) &bufferPacket.buf[0];
                 rtp->sequenceNumber = BE16(rtp->sequenceNumber);
 //                        rtp->timestamp = BE32(rtp->timestamp);

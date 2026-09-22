@@ -258,8 +258,7 @@ int LiStartConnection(PSERVER_INFORMATION serverInfo, PSTREAM_CONFIGURATION stre
     }
 
     // Extract the appversion from the supplied string
-    if (extractVersionQuadFromString(serverInfo->serverInfoAppVersion,
-                                     AppVersionQuad) < 0) {
+    if (extractVersionQuadFromString(serverInfo->serverInfoAppVersion,AppVersionQuad) < 0) {
         Limelog("Invalid appversion string: %s\n", serverInfo->serverInfoAppVersion);
         err = -1;
         goto Cleanup;

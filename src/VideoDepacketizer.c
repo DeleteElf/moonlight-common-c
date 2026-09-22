@@ -886,7 +886,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
     if (firstPacket && currentPos.length > 0) {
         // Parse the frame type from the header
         LC_ASSERT_VT(currentPos.length >= 4);
-        if (APP_VERSION_AT_LEAST(7, 1, 350) && currentPos.length >= 4) {
+        if (currentPos.length >= 4) {
             switch (currentPos.data[currentPos.offset + 3]) {
             case 1: // Normal P-frame
                 break;
@@ -904,8 +904,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
             case 5: // P-frame with reference frames invalidated
                 if (depacketizer->waitingForRefInvalFrame) {
                     Limelog("Next post-invalidation frame is: %d (%s-frame)\n",
-                            frameIndex,
-                            currentPos.data[currentPos.offset + 3] == 5 ? "P" : "I");
+                            frameIndex,currentPos.data[currentPos.offset + 3] == 5 ? "P" : "I");
                     depacketizer->waitingForRefInvalFrame = false;
                     depacketizer->waitingForNextSuccessfulFrame = false;
                 }

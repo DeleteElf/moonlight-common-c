@@ -53,7 +53,8 @@ typedef struct _STREAM_CONFIGURATION {
     // includes error correction data, so the actual encoder bitrate will be
     // about 20% lower when using the standard 20% FEC configuration.
     int bitrate;
-    int fecInNetwork;
+    // 0 disable 1 FecDepacketizeKeepRtpPacketAndSize 2 FecDepacketizeKeepRtpPacket 3 FecDepacketizeKeepRtpData
+    int fecLevel;
 
     // Max video packet size in bytes (use 1024 if unsure). If STREAM_CFG_AUTO
     // determines the stream is remote (see below), it will cap this value at

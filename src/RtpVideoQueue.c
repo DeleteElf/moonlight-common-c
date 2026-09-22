@@ -188,7 +188,7 @@ static bool queuePacket(PRTP_VIDEO_QUEUE queue, PRTPV_QUEUE_ENTRY newEntry, PRTP
 // Returns 0 if the frame is completely constructed
 static int reconstructFrame(int trackIndex,PRTP_VIDEO_QUEUE queue) {
     //我们在这里截断逻辑，不用大面积重构
-    if(StreamConfig.fecInNetwork) {//如果允许在网络层fec，则使用直接使用数据
+    if(StreamConfig.fecLevel) {//如果允许在网络层fec，则使用直接使用数据
         if (queue->receivedDataPackets >= queue->bufferDataPackets) {//数量足够则直接解码
             return 0;//队列就绪
         }
@@ -612,9 +612,7 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
             reportFinalFrameFecStatus(queue);
 
             Limelog("Unrecoverable frame %d: lost FEC blocks %d to %d\n",
-                    nvPacket->frameIndex,
-                    expectedFecBlockNumber + 1,
-                    fecCurrentBlockNumber);
+                    nvPacket->frameIndex, expectedFecBlockNumber + 1, fecCurrentBlockNumber);
 
             // Discard any unsubmitted buffers from the previous frame
             purgeListEntries(&queue->pendingFecBlockList);

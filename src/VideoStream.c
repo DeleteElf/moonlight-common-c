@@ -95,7 +95,7 @@ static void VideoReceiveThreadProc(void* context) {
     int waitingForVideoMs;
 
     decryptedSize = StreamConfig.packetSize + MAX_RTP_HEADER_SIZE;
-    switch (StreamConfig.fecInNetwork) {//如果配置了fecInNetwork，则自定义配置的 packetSize 无效
+    switch (StreamConfig.fecLevel) {//如果配置了fecInNetwork，则自定义配置的 packetSize 无效
         //一个数据包 1008+32 计算，不计算加密需求，255个数据包是一个分块，一个分块255*1008+32=257072
         case 2: //包含32个字节的数据包头
         case 3: //不包含数据包头
@@ -190,7 +190,8 @@ static void VideoReceiveThreadProc(void* context) {
         packet->ssrc = BE32(packet->ssrc);
 
         // Limelog("receive video packet===========================>%d\n",packet->ssrc);
-        queueStatus = RtpvAddPacket(&rtpQueues[packet->ssrc], packet, length, (PRTPV_QUEUE_ENTRY)&buffer[decryptedSize]);
+        // 最后一个参数是从当前流中开辟一个空间用来存储PRTPV_QUEUE_ENTRY，跟在数据后面即可，不用像之前一样放在最后，因为我们的不等长！
+        queueStatus = RtpvAddPacket(&rtpQueues[packet->ssrc], packet, length, (PRTPV_QUEUE_ENTRY)&buffer[length]);
         if (queueStatus == RTPF_RET_QUEUED) {
             // The queue owns the buffer
             buffer = NULL;

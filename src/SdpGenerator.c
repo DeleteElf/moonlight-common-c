@@ -322,32 +322,20 @@ static PSDP_OPTION getAttributesList(char*urlSafeAddr) {
     // We don't support dynamic bitrate scaling properly (it tends to bounce between min and max and never
     // settle on the optimal bitrate if it's somewhere in the middle), so we'll just latch the bitrate
     // to the requested value.
-    if (AppVersionQuad[0] >= 5) {
-        snprintf(payloadStr, sizeof(payloadStr), "%d", adjustedBitrate);
+    snprintf(payloadStr, sizeof(payloadStr), "%d", adjustedBitrate);
 
-        err |= addAttributeString(&optionHead, "x-nv-video[0].initialBitrateKbps", payloadStr);
-        err |= addAttributeString(&optionHead, "x-nv-video[0].initialPeakBitrateKbps", payloadStr);
+    err |= addAttributeString(&optionHead, "x-nv-video[0].initialBitrateKbps", payloadStr);
+    err |= addAttributeString(&optionHead, "x-nv-video[0].initialPeakBitrateKbps", payloadStr);
 
-        err |= addAttributeString(&optionHead, "x-nv-vqos[0].bw.minimumBitrateKbps", payloadStr);
-        err |= addAttributeString(&optionHead, "x-nv-vqos[0].bw.maximumBitrateKbps", payloadStr);
+    err |= addAttributeString(&optionHead, "x-nv-vqos[0].bw.minimumBitrateKbps", payloadStr);
+    err |= addAttributeString(&optionHead, "x-nv-vqos[0].bw.maximumBitrateKbps", payloadStr);
 
-        // Send the configured bitrate to Sunshine hosts, so they can adjust for dynamic FEC percentage
-        if (IS_SUNSHINE()) {
-            snprintf(payloadStr, sizeof(payloadStr), "%u", StreamConfig.bitrate);
-            err |= addAttributeString(&optionHead, "x-ml-video.configuredBitrateKbps", payloadStr);
-        }
+    // Send the configured bitrate to Sunshine hosts, so they can adjust for dynamic FEC percentage
+    if (IS_SUNSHINE()) {
+        snprintf(payloadStr, sizeof(payloadStr), "%u", StreamConfig.bitrate);
+        err |= addAttributeString(&optionHead, "x-ml-video.configuredBitrateKbps", payloadStr);
     }
-    else {
-        if (StreamConfig.streamingRemotely == STREAM_CFG_REMOTE) {
-            err |= addAttributeString(&optionHead, "x-nv-video[0].averageBitrate", "4");
-            err |= addAttributeString(&optionHead, "x-nv-video[0].peakBitrate", "4");
-        }
 
-        snprintf(payloadStr, sizeof(payloadStr), "%d", adjustedBitrate);
-        err |= addAttributeString(&optionHead, "x-nv-vqos[0].bw.minimumBitrate", payloadStr);
-        err |= addAttributeString(&optionHead, "x-nv-vqos[0].bw.maximumBitrate", payloadStr);
-    }
-    
     // FEC must be enabled for proper packet sequencing to be done by RTP FEC queue
     err |= addAttributeString(&optionHead, "x-nv-vqos[0].fec.enable", "1");
     
@@ -376,97 +364,83 @@ static PSDP_OPTION getAttributesList(char*urlSafeAddr) {
     audioChannelCount = CHANNEL_COUNT_FROM_AUDIO_CONFIGURATION(StreamConfig.audioConfiguration);
     audioChannelMask = CHANNEL_MASK_FROM_AUDIO_CONFIGURATION(StreamConfig.audioConfiguration);
 
-    if (AppVersionQuad[0] >= 4) {
-        unsigned char slicesPerFrame;
+    unsigned char slicesPerFrame;
 
-        // Use slicing for increased performance on some decoders
-        slicesPerFrame = (unsigned char)(VideoCallbacks.capabilities >> 24);
-        if (slicesPerFrame == 0) {
-            // If not using slicing, we request 1 slice per frame
-            slicesPerFrame = 1;
-        }
-        snprintf(payloadStr, sizeof(payloadStr), "%d", slicesPerFrame);
-        err |= addAttributeString(&optionHead, "x-nv-video[0].videoEncoderSlicesPerFrame", payloadStr);
+    // Use slicing for increased performance on some decoders
+    slicesPerFrame = (unsigned char)(VideoCallbacks.capabilities >> 24);
+    if (slicesPerFrame == 0) {
+        // If not using slicing, we request 1 slice per frame
+        slicesPerFrame = 1;
+    }
+    snprintf(payloadStr, sizeof(payloadStr), "%d", slicesPerFrame);
+    err |= addAttributeString(&optionHead, "x-nv-video[0].videoEncoderSlicesPerFrame", payloadStr);
 
-        if (NegotiatedVideoFormat & VIDEO_FORMAT_MASK_AV1) {
-            err |= addAttributeString(&optionHead, "x-nv-vqos[0].bitStreamFormat", "2");
-        }
-        else if (NegotiatedVideoFormat & VIDEO_FORMAT_MASK_H265) {
-            err |= addAttributeString(&optionHead, "x-nv-clientSupportHevc", "1");
-            err |= addAttributeString(&optionHead, "x-nv-vqos[0].bitStreamFormat", "1");
-
-            if (!APP_VERSION_AT_LEAST(7, 1, 408)) {
-                // This disables split frame encode on GFE 3.10 which seems to produce broken
-                // HEVC output at 1080p60 (full of artifacts even on the SHIELD itself, go figure).
-                // It now appears to work fine on GFE 3.14.1.
-                Limelog("Disabling split encode for HEVC on older GFE version");
-                err |= addAttributeString(&optionHead, "x-nv-video[0].encoderFeatureSetting", "0");
-            }
-        }
-        else {
-            err |= addAttributeString(&optionHead, "x-nv-clientSupportHevc", "0");
-            err |= addAttributeString(&optionHead, "x-nv-vqos[0].bitStreamFormat", "0");
-        }
-
-        if (AppVersionQuad[0] >= 7) {
-            // Enable HDR if requested
-            if (NegotiatedVideoFormat & VIDEO_FORMAT_MASK_10BIT) {
-                err |= addAttributeString(&optionHead, "x-nv-video[0].dynamicRangeMode", "1");
-            }
-            else {
-                err |= addAttributeString(&optionHead, "x-nv-video[0].dynamicRangeMode", "0");
-            }
-
-            // If the decoder supports reference frame invalidation, that indicates it also supports
-            // the maximum number of reference frames allowed by the codec. Even if we can't use RFI
-            // due to lack of host support, we can still allow the host to pick a number of reference
-            // frames greater than 1 to improve encoding efficiency.
-            if (isReferenceFrameInvalidationSupportedByDecoder()) {
-                err |= addAttributeString(&optionHead, "x-nv-video[0].maxNumReferenceFrames", "0");
-            }
-            else {
-                // Restrict the video stream to 1 reference frame if we're not using
-                // reference frame invalidation. This helps to improve compatibility with
-                // some decoders that don't like the default of having 16 reference frames.
-                err |= addAttributeString(&optionHead, "x-nv-video[0].maxNumReferenceFrames", "1");
-            }
-
-            snprintf(payloadStr, sizeof(payloadStr), "%d", StreamConfig.clientRefreshRateX100);
-            err |= addAttributeString(&optionHead, "x-nv-video[0].clientRefreshRateX100", payloadStr);
-        }
-
-        snprintf(payloadStr, sizeof(payloadStr), "%d", audioChannelCount);
-        err |= addAttributeString(&optionHead, "x-nv-audio.surround.numChannels", payloadStr);
-        snprintf(payloadStr, sizeof(payloadStr), "%d", audioChannelMask);
-        err |= addAttributeString(&optionHead, "x-nv-audio.surround.channelMask", payloadStr);
-        if (audioChannelCount > 2) {
-            err |= addAttributeString(&optionHead, "x-nv-audio.surround.enable", "1");
-        }
-        else {
-            err |= addAttributeString(&optionHead, "x-nv-audio.surround.enable", "0");
-        }
+    if (NegotiatedVideoFormat & VIDEO_FORMAT_MASK_AV1) {
+        err |= addAttributeString(&optionHead, "x-nv-vqos[0].bitStreamFormat", "2");
+    }
+    else if (NegotiatedVideoFormat & VIDEO_FORMAT_MASK_H265) {
+        err |= addAttributeString(&optionHead, "x-nv-clientSupportHevc", "1");
+        err |= addAttributeString(&optionHead, "x-nv-vqos[0].bitStreamFormat", "1");
+    }
+    else {
+        err |= addAttributeString(&optionHead, "x-nv-clientSupportHevc", "0");
+        err |= addAttributeString(&optionHead, "x-nv-vqos[0].bitStreamFormat", "0");
     }
 
-    if (AppVersionQuad[0] >= 7) {
-        AudioPacketDuration = 10; //考虑到udp数据包的大小问题，音频统一按10毫秒执行
-        if (StreamConfig.bitrate >= HIGH_AUDIO_BITRATE_THRESHOLD && audioChannelCount > 2 &&
-                HighQualitySurroundSupported && (AudioCallbacks.capabilities & CAPABILITY_SLOW_OPUS_DECODER) == 0) {
-            // Enable high quality mode for surround sound
-            err |= addAttributeString(&optionHead, "x-nv-audio.surround.AudioQuality", "1");
-            // Let the audio stream code know that it needs to disable coupled streams when
-            // decoding this audio stream.
-            HighQualitySurroundEnabled = true;
-        } else {
-            err |= addAttributeString(&optionHead, "x-nv-audio.surround.AudioQuality", "0");
-            HighQualitySurroundEnabled = false;
-        }
-
-        snprintf(payloadStr, sizeof(payloadStr), "%d", AudioPacketDuration);
-        err |= addAttributeString(&optionHead, "x-nv-aqos.packetDuration", payloadStr);
-
-        snprintf(payloadStr, sizeof(payloadStr), "%d", (StreamConfig.colorSpace << 1) | StreamConfig.colorRange);
-        err |= addAttributeString(&optionHead, "x-nv-video[0].encoderCscMode", payloadStr);
+    // Enable HDR if requested
+    if (NegotiatedVideoFormat & VIDEO_FORMAT_MASK_10BIT) {
+        err |= addAttributeString(&optionHead, "x-nv-video[0].dynamicRangeMode", "1");
     }
+    else {
+        err |= addAttributeString(&optionHead, "x-nv-video[0].dynamicRangeMode", "0");
+    }
+
+    // If the decoder supports reference frame invalidation, that indicates it also supports
+    // the maximum number of reference frames allowed by the codec. Even if we can't use RFI
+    // due to lack of host support, we can still allow the host to pick a number of reference
+    // frames greater than 1 to improve encoding efficiency.
+    if (isReferenceFrameInvalidationSupportedByDecoder()) {
+        err |= addAttributeString(&optionHead, "x-nv-video[0].maxNumReferenceFrames", "0");
+    }
+    else {
+        // Restrict the video stream to 1 reference frame if we're not using
+        // reference frame invalidation. This helps to improve compatibility with
+        // some decoders that don't like the default of having 16 reference frames.
+        err |= addAttributeString(&optionHead, "x-nv-video[0].maxNumReferenceFrames", "1");
+    }
+
+    snprintf(payloadStr, sizeof(payloadStr), "%d", StreamConfig.clientRefreshRateX100);
+    err |= addAttributeString(&optionHead, "x-nv-video[0].clientRefreshRateX100", payloadStr);
+
+    snprintf(payloadStr, sizeof(payloadStr), "%d", audioChannelCount);
+    err |= addAttributeString(&optionHead, "x-nv-audio.surround.numChannels", payloadStr);
+    snprintf(payloadStr, sizeof(payloadStr), "%d", audioChannelMask);
+    err |= addAttributeString(&optionHead, "x-nv-audio.surround.channelMask", payloadStr);
+    if (audioChannelCount > 2) {
+        err |= addAttributeString(&optionHead, "x-nv-audio.surround.enable", "1");
+    }
+    else {
+        err |= addAttributeString(&optionHead, "x-nv-audio.surround.enable", "0");
+    }
+
+    AudioPacketDuration = 10; //考虑到udp数据包的大小问题，音频统一按10毫秒执行
+    if (StreamConfig.bitrate >= HIGH_AUDIO_BITRATE_THRESHOLD && audioChannelCount > 2 &&
+            HighQualitySurroundSupported && (AudioCallbacks.capabilities & CAPABILITY_SLOW_OPUS_DECODER) == 0) {
+        // Enable high quality mode for surround sound
+        err |= addAttributeString(&optionHead, "x-nv-audio.surround.AudioQuality", "1");
+        // Let the audio stream code know that it needs to disable coupled streams when
+        // decoding this audio stream.
+        HighQualitySurroundEnabled = true;
+    } else {
+        err |= addAttributeString(&optionHead, "x-nv-audio.surround.AudioQuality", "0");
+        HighQualitySurroundEnabled = false;
+    }
+
+    snprintf(payloadStr, sizeof(payloadStr), "%d", AudioPacketDuration);
+    err |= addAttributeString(&optionHead, "x-nv-aqos.packetDuration", payloadStr);
+
+    snprintf(payloadStr, sizeof(payloadStr), "%d", (StreamConfig.colorSpace << 1) | StreamConfig.colorRange);
+    err |= addAttributeString(&optionHead, "x-nv-video[0].encoderCscMode", payloadStr);
 
     if (err == 0) {
         return optionHead;

@@ -478,15 +478,11 @@ static bool setupStream(PRTSP_MESSAGE response, char* target, int* error) {
             }
         }
 
-        if (AppVersionQuad[0] >= 6) {
-            // It looks like GFE doesn't care what we say our port is but
-            // we need to give it some port to successfully complete the
-            // handshake process.
-            transportValue = "unicast;X-GS-ClientPort=50000-50001";
-        }
-        else {
-            transportValue = " ";
-        }
+        // It looks like GFE doesn't care what we say our port is but
+        // we need to give it some port to successfully complete the
+        // handshake process.
+        transportValue = "unicast;X-GS-ClientPort=50000-50001";
+
 
         if (addOption(&request, "Transport", transportValue) &&
             addOption(&request, "If-Modified-Since",
@@ -887,25 +883,8 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
     if (ret != 0) {
 
     }
-    switch (AppVersionQuad[0]) {
-        case 3:
-            rtspClientVersion = 10;
-            break;
-        case 4:
-            rtspClientVersion = 11;
-            break;
-        case 5:
-            rtspClientVersion = 12;
-            break;
-        case 6:
-            // Gen 6 has never been seen in the wild
-            rtspClientVersion = 13;
-            break;
-        case 7:
-        default:
-            rtspClientVersion = 14;
-            break;
-    }
+
+    rtspClientVersion = 14;
 
     //RTSP OPTIONS
     {
@@ -1035,7 +1014,7 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
         int error = -1;
         char* strtokCtx = NULL;
 
-        if (!setupStream(&response,AppVersionQuad[0] >= 5 ? "streamid=audio/0/0" : "streamid=audio",&error)) {
+        if (!setupStream(&response,"streamid=audio/0/0" ,&error)) {
             Limelog("RTSP SETUP streamid=audio request failed: %d\n", error);
             ret = error;
             goto Exit;
@@ -1091,7 +1070,7 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
         int error = -1;
         char* pingPayload;
 
-        if (!setupStream(&response,AppVersionQuad[0] >= 5 ? "streamid=video/0/0" : "streamid=video", &error)) {
+        if (!setupStream(&response, "streamid=video/0/0" , &error)) {
             Limelog("RTSP SETUP streamid=video request failed: %d\n", error);
             ret = error;
             goto Exit;
@@ -1113,7 +1092,7 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
         freeMessage(&response);
     }
     //RTSP SETUP CONTROL
-    if (AppVersionQuad[0] >= 5) {
+    {
         RTSP_MESSAGE response;
         int error = -1;
         char* connectData;
