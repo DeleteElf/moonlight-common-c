@@ -635,8 +635,7 @@ static int getBufferFlags(char* data, int length) {
     }
 }
 
-// As an optimization, we can cast the existing packet buffer to a PLENTRY and avoid
-// a malloc() and a memcpy() of the packet data.
+// 作为一种优化手段，我们可以将现有的数据包缓冲区转换为PLENTRY类型，从而避免对数据包数据进行malloc()和memcpy()操作。
 static void queueFragment(PVIDEO_DEPACKETIZER depacketizer, PLENTRY_INTERNAL* existingEntry, char* data, int offset, int length,int ssrc) {
     PLENTRY_INTERNAL entry;
 
@@ -842,14 +841,10 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
             }
             else {
                 Limelog("解包器【%d】检测到从网络中接收的数据中，丢失了[%d]帧视频数据 (frames %d to %d)\n",
-                        depacketizer->trackIndex,
-                        frameIndex - depacketizer->nextFrameNumber,
-                        depacketizer->nextFrameNumber,
-                        frameIndex - 1);
+                        depacketizer->trackIndex,frameIndex - depacketizer->nextFrameNumber,
+                        depacketizer->nextFrameNumber,frameIndex - 1);
             }
-
             depacketizer->nextFrameNumber = frameIndex;
-
             // Wait until next complete frame
             depacketizer->waitingForNextSuccessfulFrame = true;
             dropFrameState(depacketizer);
@@ -857,7 +852,6 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
         else {
             LC_ASSERT(depacketizer->nextFrameNumber == frameIndex);
         }
-
         // We're now decoding a frame
         depacketizer->decodingFrame = true;
         depacketizer->frameType = FRAME_TYPE_PFRAME;
@@ -942,7 +936,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
             BbInitializeWrappedBuffer(&bb, currentPos.data, currentPos.offset + 4, 2, BYTE_ORDER_LITTLE);
             BbGet16(&bb, &depacketizer->lastPacketPayloadLength);
         }
-
+        //current version 7.1.431.-1;
         if (APP_VERSION_AT_LEAST(7, 1, 450)) {
             // >= 7.1.450 uses 2 different header lengths based on the first byte:
             // 0x01 indicates an 8 byte header
@@ -978,22 +972,6 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
                 LC_ASSERT_VT(currentPos.data[0] == (char)0x81);
                 frameHeaderSize = 24;
             }
-        }
-        else if (APP_VERSION_AT_LEAST(7, 1, 350)) {
-            // [7.1.350, 7.1.415) should use the 8 byte header again
-            frameHeaderSize = 8;
-        }
-        else if (APP_VERSION_AT_LEAST(7, 1, 320)) {
-            // [7.1.320, 7.1.350) should use the 12 byte frame header
-            frameHeaderSize = 12;
-        }
-        else if (APP_VERSION_AT_LEAST(5, 0, 0)) {
-            // [5.x, 7.1.320) should use the 8 byte header
-            frameHeaderSize = 8;
-        }
-        else {
-            // Other versions don't have a frame header at all
-            frameHeaderSize = 0;
         }
 
         LC_ASSERT_VT(currentPos.length >= frameHeaderSize);
@@ -1037,13 +1015,12 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
     if (NegotiatedVideoFormat & (VIDEO_FORMAT_MASK_H264 | VIDEO_FORMAT_MASK_H265)) {
         if (firstPacket && isIdrFrameStart(&currentPos)) {
             Limelog("收到关键帧===========================>%d\n",ssrc);
-
-            // SPS and PPS prefix is padded between NALs, so we must decode it with the slow path
+            // SPS和PPS前缀在NAL之间进行了填充，因此我们必须使用慢路径对其进行解码
             processAvcHevcRtpPayloadSlow(depacketizer,&currentPos, existingEntry);
         }
         else {
-            // Intel's H.264 Media Foundation encoder prepends a PPS to each P-frame.
-            // Skip it to avoid confusing clients.
+            // 英特尔的H.264媒体基础编码器会在每个P帧前添加一个PPS。
+            // 跳过此项以避免给客户造成混淆。
             if (firstPacket && isPictureParameterSetNal(&currentPos)) {
                 skipToNextNal(&currentPos);
             }
@@ -1058,8 +1035,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
         }
     }
     else {
-        // We fixup the length of the last packet for other codecs since they may not be tolerant
-        // of trailing zero padding like H.264/HEVC Annex B bitstream parsers are.
+        // 我们调整了其他编解码器的最后一个数据包的长度，因为它们可能不像H.264/HEVC Annex B比特流解析器那样能够容忍尾部零填充。
         if (lastPacket) {
             // The payload length includes the frame header, so it cannot be smaller than that
             LC_ASSERT_VT(depacketizer->lastPacketPayloadLength > frameHeaderSize);
@@ -1221,4 +1197,218 @@ void queueRtpPacket(int trackIndex,PRTPV_QUEUE_ENTRY queueEntryPtr) {
 
 int LiGetPendingVideoFrames(int trackIndex) {
     return LbqGetItemCount(&depacketizers->data[trackIndex].decodeUnitQueue);
+}
+
+
+PLENTRY CreateEntry(char* data, int offset, int length,int ssrc){
+    // 5) 分配 LENTRY 节点
+    PLENTRY entry = (PLENTRY)calloc(1, sizeof(LENTRY)+length);
+    if (!entry) {
+        return NULL;
+    }
+    entry->data = &data[offset];
+    entry->length = length;
+    entry->ssrc = ssrc;
+    // 6) 获取对应节点的精准 BufferType (如 BUFFER_TYPE_SPS, BUFFER_TYPE_PPS, BUFFER_TYPE_PICDATA)
+    entry->bufferType = getBufferFlags(entry->data, entry->length);
+
+    return entry;
+}
+
+void LiSubmitFullFrameBuffer(char* buffer,int length){
+    PRTP_PACKET packet = (PRTP_PACKET)&buffer[0];
+    packet->sequenceNumber = BE16(packet->sequenceNumber);
+    packet->timestamp = BE32(packet->timestamp);
+    packet->ssrc = BE32(packet->ssrc);
+    if(packet->ssrc>1||packet->ssrc<0){//我们目前并不支持ssrc在0、1范围外的数据
+      Limelog("收到损坏的数据 ssrc[%d]sequenceNumber[%d]\n",packet->ssrc,packet->sequenceNumber);
+      return;
+    }
+    int dataOffset = sizeof(RTP_PACKET) + ((packet->header & FLAG_EXTENSION) ? 4 : 0);
+    if (length <= dataOffset + (int)sizeof(NV_VIDEO_PACKET)) {
+        Limelog("收到损坏的数据 ssrc[%d]sequenceNumber[%d]dataOffset[%d]length[%d]\n",
+          packet->ssrc,packet->sequenceNumber,dataOffset,length);
+        return;
+    }
+    PNV_VIDEO_PACKET nvPacket = (PNV_VIDEO_PACKET)(buffer + dataOffset);
+    nvPacket->frameIndex=LE32(nvPacket->frameIndex);
+
+    BUFFER_DESC currentPos;
+    currentPos.data = (char*)(nvPacket + 1);
+    currentPos.offset = 0;
+    currentPos.length = length- dataOffset - sizeof(NV_VIDEO_PACKET);
+
+    PVIDEO_DEPACKETIZER depacketizer=&depacketizers->data[packet->ssrc];//获取现有的解包器
+    // 2. 构造 DECODE_UNIT
+    DECODE_UNIT du;
+    memset(&du, 0, sizeof(DECODE_UNIT));
+
+    du.frameNumber = nvPacket->frameIndex;
+    du.frameType = FRAME_TYPE_PFRAME; // 根据实际帧类型设置（如 IDR 或 P 帧）
+    if(currentPos.length>0) {
+        uint32_t nvHeaderSize = 0;
+        //从7.1.415.-1  到  7.1.450.-1 的规则，7.1.431.-1是当前版本
+        if (APP_VERSION_AT_LEAST(7, 1, 415)) {
+            nvHeaderSize = (currentPos.data[0] == 0x01) ? 8 : ((APP_VERSION_AT_LEAST(7, 1, 450) ? 44:
+                    (APP_VERSION_AT_LEAST(7, 1, 446)? 41 : 24)));
+        }
+        if (currentPos.length > nvHeaderSize) {
+            switch (currentPos.data[3]) {
+                case 2:
+                    du.frameType = FRAME_TYPE_IDR;
+                    break;
+                default:
+//                    du.frameType = FRAME_TYPE_PFRAME;
+                    break;
+            }
+            currentPos.offset += nvHeaderSize;
+            currentPos.length -= nvHeaderSize;
+        }
+        // Limelog("收到数据 ssrc[%d]sequenceNumber[%d]frameIndex[%d]长度[%d]去Nal后长度[%d]\n",packet->ssrc,packet->sequenceNumber,nvPacket->frameIndex,length,currentPos.length);
+        // H.264 / H.265 NALU 过滤 (剥离 AUD / SEI)
+        if (NegotiatedVideoFormat & (VIDEO_FORMAT_MASK_H264 | VIDEO_FORMAT_MASK_H265)) {
+            // if (!getAnnexBStartSequence(&currentPos, NULL)) {
+            //     skipToNextNal(&currentPos);
+            // }
+            // 【关键修复 1】：搜寻并对齐到第一个 Annex-B 起始码 (00 00 00 01 或 00 00 01)
+            // 如果当前 offset 没有对准起始码，向前逐字节搜索，而不是直接 skip 到末尾！
+            while (currentPos.length >= 3) {
+                uint8_t *p = (uint8_t*)currentPos.data + currentPos.offset;
+                // 匹配 00 00 01 或 00 00 00 01
+                if ((p[0] == 0x00 && p[1] == 0x00 && p[2] == 0x01) ||
+                    (currentPos.length >= 4 && p[0] == 0x00 && p[1] == 0x00 && p[2] == 0x00 && p[3] == 0x01)) {
+                    break; // 成功找到并对齐 Annex-B 起始码
+                }
+                // 没找到起始码，按 1 字节微调推进（防止跳过整个帧）
+                currentPos.offset++;
+                currentPos.length--;
+            }
+            // 如果找不到任何 Annex-B 起始码，说明该包数据非法，安全丢弃
+            if (currentPos.length < 4) {
+                Limelog("警告: 未找到有效的 Annex-B 起始码, ssrc[%d], frame[%d]\n", packet->ssrc, nvPacket->frameIndex);
+                return;
+            }
+            if (isAccessUnitDelimiter(&currentPos)) {
+                skipToNextNal(&currentPos);
+            }
+            while (isSeiNal(&currentPos)) {
+                skipToNextNal(&currentPos);
+            }
+        }
+    }else{
+        Limelog("收到损坏的数据 ssrc[%d]sequenceNumber[%d]frameIndex[%d]dataOffset[%d]length[%d]\n",
+          packet->ssrc,packet->sequenceNumber,nvPacket->frameIndex,dataOffset,length);
+        return;
+    }
+    PLENTRY head = NULL;
+    uint32_t totalLength = 0;
+    if (NegotiatedVideoFormat & (VIDEO_FORMAT_MASK_H264 | VIDEO_FORMAT_MASK_H265)) {
+        if (isIdrFrameStart(&currentPos)) {
+            notifyKeyFrameReceived(packet->ssrc);
+            PLENTRY tail = NULL;
+            while (currentPos.length != 0) {
+                // Skip through any padding bytes
+                if (!getAnnexBStartSequence(&currentPos, NULL)) {
+                    skipToNextNal(&currentPos);
+                }
+                // Skip any prepended AUD or SEI NALUs. We may have padding between
+                // these on IDR frames, so the check in processRtpPayload() is not
+                // completely sufficient to handle that case.
+                while (isAccessUnitDelimiter(&currentPos) || isSeiNal(&currentPos)) {
+                    skipToNextNal(&currentPos);
+                }
+
+                int start = currentPos.offset;
+                bool containsPicData = false;
+
+                if (isSeqReferenceFrameStart(&currentPos)) {
+                    // Use the cached LENTRY for this NALU since it will be
+                    // the bulk of the data in this packet.
+                    containsPicData = true;
+                    // This is an IDR frame
+                    du.frameType = FRAME_TYPE_IDR;
+                }
+
+                // Move to the next NALU
+                skipToNextNalOrEnd(&currentPos);
+
+                // If this is the picture data, we expect it to extend to the end of the packet
+                if (containsPicData) {
+                    while (currentPos.length != 0) {
+                        // Any NALUs we encounter on the way to the end of the packet must be
+                        // reference frame slices or filler data.
+                        LC_ASSERT_VT(isSeqReferenceFrameStart(&currentPos) || isFillerDataNal(&currentPos));
+                        skipToNextNalOrEnd(&currentPos);
+                    }
+                }
+                PLENTRY entry =CreateEntry(currentPos.data,start,currentPos.offset - start,packet->ssrc);
+                if (tail == NULL) {
+                    head = tail = entry;
+                } else {
+                    tail->next = entry;
+                    tail = entry;
+                }
+                totalLength += entry->length;
+            }
+        } else {
+            // 英特尔的H.264媒体基础编码器会在每个P帧前添加一个PPS。
+            // 跳过此项以避免给客户造成混淆。
+            if (isPictureParameterSetNal(&currentPos)) {
+                skipToNextNal(&currentPos);
+            }
+            head =CreateEntry(currentPos.data,currentPos.offset,currentPos.length,packet->ssrc);
+            totalLength += head->length;
+        }
+    }else{
+        head =CreateEntry(currentPos.data,currentPos.offset,currentPos.length,packet->ssrc);
+        totalLength += head->length;
+    }
+    // 如果拆分失败或链表为空，直接退出防止崩溃
+    if (head == NULL || totalLength == 0) {
+        Limelog("打包 DECODE_UNIT 失败: 无有效 NAL 载荷\n");
+        return;
+    }
+    du.fullLength = totalLength;
+    du.bufferList = head; // 链表头指针
+
+    uint64_t nowUs = PltGetMicroseconds();
+    du.receiveTimeUs = nowUs;
+    du.enqueueTimeUs = nowUs;
+    du.presentationTimeUs = nowUs;
+
+    //    VIDEO_DEPACKETIZER depacketizer;
+    //    validateDecodeUnitForPlayback(depacketizer,&du);//验证一下数据
+    // 3. 调用重构后的 submitDecodeUnit
+
+    // 1. 动态分配 QUEUED_DECODE_UNIT（必须在 Heap 上分配，因为要跨线程传递给解码线程）
+    PQUEUED_DECODE_UNIT qdu = (PQUEUED_DECODE_UNIT)malloc(sizeof(QUEUED_DECODE_UNIT));
+    if (!qdu) {
+        Limelog("内存分配失败: qdu\n");
+        // 失败时需要释放 LENTRY 链表
+        PLENTRY curr = head;
+        while (curr != NULL) {
+            PLENTRY next = curr->next;
+            free(curr);
+            curr = next;
+        }
+        return;
+    }
+    // 2. 拷贝 DECODE_UNIT 数据到 qdu
+    memset(qdu, 0, sizeof(QUEUED_DECODE_UNIT));
+    memcpy(&qdu->decodeUnit, &du, sizeof(DECODE_UNIT));
+    // 4. 将打包好的帧推进 Moonlight 的核心解码队列 (这会唤醒 decoderThreadProc 线程)
+    int err = LbqOfferQueueItem(&depacketizer->decodeUnitQueue, qdu, &qdu->entry);
+    if (err != LBQ_SUCCESS) {
+        Limelog("入队失败 decodeUnitQueue 溢出或关闭: %d\n", err);
+        // 入队失败，清空资源
+        PLENTRY curr = head;
+        while (curr != NULL) {
+            PLENTRY next = curr->next;
+            free(curr);
+            curr = next;
+        }
+        free(qdu);
+        return;
+    }
+//    Limelog("成功将帧 [%d] 推入解码队列, SSRC[%d]\n", du.frameNumber, packet->ssrc);
 }

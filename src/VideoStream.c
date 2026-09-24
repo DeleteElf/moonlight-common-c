@@ -99,7 +99,7 @@ static void VideoReceiveThreadProc(void* context) {
         //一个数据包 1008+32 计算，不计算加密需求，255个数据包是一个分块，一个分块255*1008+32=257072
         case 2: //包含32个字节的数据包头
         case 3: //不包含数据包头
-            decryptedSize=StreamConfig.packetSize*255+MAX_RTP_HEADER_SIZE;
+            decryptedSize=StreamConfig.packetSize*255*4+MAX_RTP_HEADER_SIZE;//提供最大缓存，反正不用反复分配，这个已经是最省状态
             Limelog("使用fec网络层解包 packet size: %d bytes\n",decryptedSize);
             break;
         default:
@@ -171,7 +171,7 @@ static void VideoReceiveThreadProc(void* context) {
             uint64_t now = PltGetMillis();
 
             if (now - firstDataTimeMs >= FIRST_FRAME_TIMEOUT_SEC * 1000) {
-                Limelog("Terminating connection due to lack of a successful video frame\n");
+                Limelog("因缺少成功的视频帧，正在终止连接\n");
                 ListenerCallbacks.connectionTerminated(ML_ERROR_NO_VIDEO_FRAME);
                 break;
             }
@@ -182,19 +182,21 @@ static void VideoReceiveThreadProc(void* context) {
             // Runt packet
             continue;
         }
-
-        // Convert fields to host byte-order
-        packet = (PRTP_PACKET)&buffer[0];
-        packet->sequenceNumber = BE16(packet->sequenceNumber);
-        packet->timestamp = BE32(packet->timestamp);
-        packet->ssrc = BE32(packet->ssrc);
-
-        // Limelog("receive video packet===========================>%d\n",packet->ssrc);
-        // 最后一个参数是从当前流中开辟一个空间用来存储PRTPV_QUEUE_ENTRY，跟在数据后面即可，不用像之前一样放在最后，因为我们的不等长！
-        queueStatus = RtpvAddPacket(&rtpQueues[packet->ssrc], packet, length, (PRTPV_QUEUE_ENTRY)&buffer[length]);
-        if (queueStatus == RTPF_RET_QUEUED) {
-            // The queue owns the buffer
-            buffer = NULL;
+        if(StreamConfig.fecLevel<2) {//如果是原来的数据包逻辑
+            // Convert fields to host byte-order
+            packet = (PRTP_PACKET)&buffer[0];
+            packet->sequenceNumber = BE16(packet->sequenceNumber);
+            packet->timestamp = BE32(packet->timestamp);
+            packet->ssrc = BE32(packet->ssrc);
+            // Limelog("receive video packet===========================>%d\n",packet->ssrc);
+            // 最后一个参数是从当前流中开辟一个空间用来存储PRTPV_QUEUE_ENTRY，跟在数据后面即可，不用像之前一样放在最后，因为我们的不等长！
+            queueStatus = RtpvAddPacket(&rtpQueues[packet->ssrc], packet, length, (PRTPV_QUEUE_ENTRY) &buffer[length]);
+            if (queueStatus == RTPF_RET_QUEUED) {
+                // The queue owns the buffer
+                buffer = NULL;
+            }
+        }else{
+            LiSubmitFullFrameBuffer(buffer,length);//直接提交数据给解码单元
         }
     }
 
