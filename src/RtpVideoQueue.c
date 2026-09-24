@@ -517,27 +517,23 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
         // Reject packets behind our current buffer window
         return RTPF_RET_REJECTED;
     }
-
     // FLAG_EXTENSION is required for all supported versions of GFE.
-    if(queue->currentFrameNumber==1 && (packet->header & FLAG_EXTENSION)==0) //如果是首个数据包，则丢弃
+    if((packet->header & FLAG_EXTENSION)==0) //如果是首个数据包,并且不是我们需要的扩展模式，则丢弃
         return RTPF_RET_REJECTED;
     //LC_ASSERT_VT(packet->header & FLAG_EXTENSION);//这里经常会在首个数据包收到一个  没有GFE版本支持的数据包，暂时还不知道原因，但是影响调试，先注释
     int dataOffset = sizeof(*packet);
     if (packet->header & FLAG_EXTENSION) {
         dataOffset += 4; // 2 additional fields
     }
-
     if (length < dataOffset + (int)sizeof(NV_VIDEO_PACKET)) {
         // Reject packets that are too small to fit a NV_VIDEO_PACKET header
         return RTPF_RET_REJECTED;
     }
-
     PNV_VIDEO_PACKET nvPacket = (PNV_VIDEO_PACKET)(((char*)packet) + dataOffset);
-
     nvPacket->streamPacketIndex = LE32(nvPacket->streamPacketIndex);
     nvPacket->frameIndex = LE32(nvPacket->frameIndex);
     nvPacket->fecInfo = LE32(nvPacket->fecInfo);
-
+//    Limelog("收到数据 ssrc[%d]sequenceNumber[%d]frameIndex[%d]\n",packet->ssrc,packet->sequenceNumber,nvPacket->frameIndex);
     // For legacy servers, we'll fixup the reserved data so that it looks like
     // it's a single FEC frame from a multi-FEC capable server. This allows us
     // to make our parsing logic simpler.
@@ -562,7 +558,8 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
     }
 
     //如果在帧传递后队列为空，或者我们在接收下一个帧之前无法完成当前帧，则重新初始化队列
-    if (queue->pendingFecBlockList.count == 0 || queue->currentFrameNumber != nvPacket->frameIndex ||
+    if (queue->pendingFecBlockList.count == 0 ||
+            queue->currentFrameNumber != nvPacket->frameIndex ||
             queue->multiFecCurrentBlockNumber != fecCurrentBlockNumber) {
         if (queue->pendingFecBlockList.count != 0) {
             // Report the final status of the FEC queue before dropping this frame
@@ -571,11 +568,8 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
             if (queue->multiFecLastBlockNumber != 0) {
                 Limelog("Unrecoverable frame %d (block %d of %d): %d+%d=%d received < %d needed\n",
                         queue->currentFrameNumber, queue->multiFecCurrentBlockNumber+1,
-                        queue->multiFecLastBlockNumber+1,
-                        queue->receivedDataPackets,
-                        queue->receivedParityPackets,
-                        queue->pendingFecBlockList.count,
-                        queue->bufferDataPackets);
+                        queue->multiFecLastBlockNumber+1,queue->receivedDataPackets,
+                        queue->receivedParityPackets,queue->pendingFecBlockList.count, queue->bufferDataPackets);
 
                 // If we just missed a block of this frame rather than the whole thing,
                 // we must manually advance the queue to the next frame. Parsing this
@@ -599,20 +593,17 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
             else {
                 Limelog("Unrecoverable frame %d: %d+%d=%d received < %d needed\n",
                         queue->currentFrameNumber, queue->receivedDataPackets,
-                        queue->receivedParityPackets,
-                        queue->pendingFecBlockList.count,
-                        queue->bufferDataPackets);
+                        queue->receivedParityPackets,queue->pendingFecBlockList.count,queue->bufferDataPackets);
             }
         }
 
         // 我们必须从当前帧的当前FEC块编号开始，或者从新帧的块0开始。
         uint8_t expectedFecBlockNumber = (queue->currentFrameNumber == nvPacket->frameIndex ? queue->multiFecCurrentBlockNumber : 0);
-        if (fecCurrentBlockNumber != expectedFecBlockNumber) {
+        if (fecCurrentBlockNumber != expectedFecBlockNumber) {//这里在非fec下，应该不会进来！！！
             // Report the final status of the FEC queue before dropping this frame
             reportFinalFrameFecStatus(queue);
 
-            Limelog("Unrecoverable frame %d: lost FEC blocks %d to %d\n",
-                    nvPacket->frameIndex, expectedFecBlockNumber + 1, fecCurrentBlockNumber);
+            Limelog("Unrecoverable frame %d: lost FEC blocks %d to %d\n", nvPacket->frameIndex, expectedFecBlockNumber + 1, fecCurrentBlockNumber);
 
             // Discard any unsubmitted buffers from the previous frame
             purgeListEntries(&queue->pendingFecBlockList);
@@ -642,16 +633,20 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
         // The check here looks weird, but that's because we increment the frame number
         // after successfully processing a frame.
         if (queue->currentFrameNumber != nvPacket->frameIndex) {
-            LC_ASSERT_VT(queue->currentFrameNumber < nvPacket->frameIndex);
+            //后面开始会判断队列的正确与否，todo:我们需要处理一下关键帧追帧的问题，不然会一直提示丢帧 丢包的问题。
+            if ((((char *) packet) + 35)[0] != 2) {//已经是idr了，不再报告
+                LC_ASSERT_VT(queue->currentFrameNumber < nvPacket->frameIndex);
 
-            // If the frame immediately preceding this one was lost, we may have already
-            // reported it using our speculative RFI logic. Don't report it again.
-            if (queue->currentFrameNumber + 1 != nvPacket->frameIndex || !queue->reportedLostFrame) {
-                //我们只需通知最近丢失的帧，因为解包器会报告从它最后看到的帧开始的RFI范围。
-                notifyFrameLost(packet->ssrc, nvPacket->frameIndex - 1, false);
+                // If the frame immediately preceding this one was lost, we may have already
+                // reported it using our speculative RFI logic. Don't report it again.
+                if (queue->currentFrameNumber + 1 != nvPacket->frameIndex || !queue->reportedLostFrame) {
+                    //我们只需通知最近丢失的帧，因为解包器会报告从它最后看到的帧开始的RFI范围。
+                    notifyFrameLost(packet->ssrc, nvPacket->frameIndex - 1, false);
+                }
+            } else {
+                Limelog("Rtp 视频队列收到关键帧，执行追帧：%d->%d\n", packet->ssrc, queue->currentFrameNumber,nvPacket->frameIndex);
             }
         }
-
         queue->currentFrameNumber = nvPacket->frameIndex;
 
         // Tell the control stream logic about this frame, even if we don't end up
