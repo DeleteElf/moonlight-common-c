@@ -534,7 +534,7 @@ static void reassembleFrame(PVIDEO_DEPACKETIZER depacketizer,int frameNumber, bo
             if (depacketizer->nalChainHead->bufferType != BUFFER_TYPE_PICDATA
             || qdu->decodeUnit.frameType == FRAME_TYPE_IDR) {
                 qdu->decodeUnit.frameType = FRAME_TYPE_IDR;
-                notifyKeyFrameReceived(depacketizer->trackIndex);
+                notifyKeyFrameReceived(depacketizer->trackIndex,frameNumber);
             }
             else {
                 qdu->decodeUnit.frameType = FRAME_TYPE_PFRAME;
@@ -1338,7 +1338,7 @@ void LiSubmitFullFrameBuffer(char* buffer, int length) {
     // 检查剥离头部后是否为 IDR 帧开头
     if (isIdrFrameStart(&currentPos)) {
         du.frameType = FRAME_TYPE_IDR;
-        notifyKeyFrameReceived(packet->ssrc);
+        notifyKeyFrameReceived(packet->ssrc,nvPacket->frameIndex);
     }
 
     // 3. 通用高效 NALU 循环提取（适配 IDR 和 P 帧，防止结构破坏）

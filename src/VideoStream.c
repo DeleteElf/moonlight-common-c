@@ -144,6 +144,7 @@ static void VideoReceiveThreadProc(void* context) {
             break;
         }
         else if  (length == 0) {
+            Limelog("接收到长度为0的数据,丢弃!\n");
             if (!receivedDataFromPeer) {
                 // If we wait many seconds without ever receiving a video packet,
                 // assume something is broken and terminate the connection.
@@ -179,7 +180,7 @@ static void VideoReceiveThreadProc(void* context) {
 #endif
 
         if (length < minSize) {
-            // Runt packet
+            Limelog("接收到不符合要求大小的数据,丢弃!\n");
             continue;
         }
 //        if(StreamConfig.fecLevel<2) {//如果是原来的数据包逻辑
@@ -187,6 +188,7 @@ static void VideoReceiveThreadProc(void* context) {
             packet = (PRTP_PACKET)&buffer[0];
             packet->ssrc = BE32(packet->ssrc);
             if(packet->ssrc<0||packet->ssrc>1){//过滤无效的空包数据
+              Limelog("接收到不符合要求的ssrc数据,丢弃!\n");
               continue;
             }
             packet->sequenceNumber = BE16(packet->sequenceNumber);
@@ -209,10 +211,10 @@ static void VideoReceiveThreadProc(void* context) {
 
 }
 
-void notifyKeyFrameReceived(int displayIndex) {
+void notifyKeyFrameReceived(int displayIndex,int frameIndex) {
     // Remember that we got a full frame successfully
     receivedFullFrame = true;
-    Limelog("通知收到关键帧,trackIndex:%d\n",displayIndex);
+    Limelog("通知收到关键帧,trackIndex:%d,frameIndex:%d\n",displayIndex,frameIndex);
 }
 
 // Decoder thread proc
