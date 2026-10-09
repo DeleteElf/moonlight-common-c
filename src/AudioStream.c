@@ -250,7 +250,7 @@ static void AudioReceiveThreadProc(void* context) {
                 }
                 lastSeq = rtp->sequenceNumber;
                 if (bufferPacket.len == 12) {//如果底层解包失败，则直接塞入空数据给lib opus
-                    Limelog("收到空的音频数据包，数据包长度：%d\n", bufferPacket.len);
+//                    Limelog("收到空的音频数据包，数据包长度：%d\n", bufferPacket.len);
                     AudioCallbacks.decodeAndPlaySample(NULL, 0);
                 }else {
                     AudioCallbacks.decodeAndPlaySample((char *) (rtp + 1), bufferPacket.len - sizeof(*rtp));
