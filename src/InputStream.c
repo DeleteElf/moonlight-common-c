@@ -686,7 +686,7 @@ int LiSendMouseMoveEvent(short deltaX, short deltaY) {
     return err;
 }
 
-// Send a mouse position update to the streaming machine
+// 向流媒体设备发送鼠标位置更新信息
 int LiSendMousePositionEvent(short displayIndex, short x, short y, short referenceWidth, short referenceHeight) {
     PPACKET_HOLDER holder;
     int err;
@@ -694,20 +694,26 @@ int LiSendMousePositionEvent(short displayIndex, short x, short y, short referen
     if (!initialized) {
         return -2;
     }
-
     PltLockMutex(&batchedInputMutex);
-
-    // Overwrite the previous mouse location with the new one
+    // 1. 必须在加锁之后检查，确保线程安全
+    // 2. 同时比对 displayIndex, x, y 以及参考宽高（防止分辨率切换时漏掉更新）
+    if (currentAbsoluteMouseState.displayIndex == displayIndex &&
+        currentAbsoluteMouseState.x == x && currentAbsoluteMouseState.y == y &&
+        currentAbsoluteMouseState.width == referenceWidth &&
+        currentAbsoluteMouseState.height == referenceHeight) {
+        PltUnlockMutex(&batchedInputMutex);
+        return 0; // 坐标和分辨率都没有变化，直接跳过
+    }
+    // 用新的鼠标位置覆盖之前的鼠标位置
     currentAbsoluteMouseState.displayIndex=displayIndex;
     currentAbsoluteMouseState.x = x;
     currentAbsoluteMouseState.y = y;
     currentAbsoluteMouseState.width = referenceWidth;
     currentAbsoluteMouseState.height = referenceHeight;
 
-    // Queue a packet holder if this is the only pending absolute mouse event
+    // 如果这是唯一一个待处理的绝对鼠标事件，则将数据包持有者加入队列
     if (!currentAbsoluteMouseState.dirty) {
-        // Set the dirty flag to claim ownership of inserting the packet holder
-        // and unlock to allow other threads to enqueue or process input.
+        // 设置脏标志以声明对插入数据包持有者的所有权，并解锁以允许其他线程入队或处理输入。
         currentAbsoluteMouseState.dirty = true;
         PltUnlockMutex(&batchedInputMutex);
 
@@ -721,28 +727,24 @@ int LiSendMousePositionEvent(short displayIndex, short x, short y, short referen
         holder->packet.mouseMoveAbs.header.magic = LE32(MOUSE_MOVE_ABS_MAGIC);
         holder->packet.mouseMoveAbs.displayIndex=displayIndex;
 
-        // Remaining fields are set in the input thread based on the latest currentAbsoluteMouseState values
-
+        // 其余字段在输入线程中根据最新的currentAbsoluteMouseState值进行设置
         err = LbqOfferQueueItem(&packetQueue, holder, &holder->entry);
         if (err != LBQ_SUCCESS) {
             LC_ASSERT(err == LBQ_BOUND_EXCEEDED);
             Limelog("Input queue reached maximum size limit\n");
             freePacketHolder(holder);
-
-            // We weren't able to insert the entry, so let the next call try again
+            //我们无法插入该条目，所以让下一个调用再试一次
             currentAbsoluteMouseState.dirty = false;
         }
     }
     else {
-        // There's already a packet holder queued to send this event
+        // 已经有了一个数据包持有者排队等待发送此事件
         PltUnlockMutex(&batchedInputMutex);
         err = 0;
     }
 
-    // This is not thread safe, but it's not a big deal because callers that want to
-    // use LiSendRelativeMotionAsMousePositionEvent() must not mix these function
-    // without synchronization (otherwise the state of the cursor on the host is
-    // undefined anyway).
+    // 这并不是线程安全的，但这不是什么大问题，因为想要使用LiSendRelativeMotionAsMousePositionEvent()
+    // 的调用者不得在没有同步的情况下混合使用这些函数（否则主机上的光标状态无论如何都是未定义的）。
     absCurrentPosX = CLAMP(x, 0, referenceWidth - 1) / (float)(referenceWidth - 1);
     absCurrentPosY = CLAMP(y, 0, referenceHeight - 1) / (float)(referenceHeight - 1);
 
@@ -750,15 +752,15 @@ int LiSendMousePositionEvent(short displayIndex, short x, short y, short referen
 }
 
 // Send a relative motion event using absolute position to the streaming machine
-int LiSendMouseMoveAsMousePositionEvent(short displayIndex, short deltaX, short deltaY, short referenceWidth, short referenceHeight) {
-    // Convert the current position to be relative to the provided reference dimensions
-    short oldPositionX = (short)(absCurrentPosX * referenceWidth);
-    short oldPositionY = (short)(absCurrentPosY * referenceHeight);
-
-    return LiSendMousePositionEvent(displayIndex, CLAMP(oldPositionX + deltaX, 0, referenceWidth),
-                                    CLAMP(oldPositionY + deltaY, 0, referenceHeight),
-                                    referenceWidth, referenceHeight);
-}
+//int LiSendMouseMoveAsMousePositionEvent(short displayIndex, short deltaX, short deltaY, short referenceWidth, short referenceHeight) {
+//    // Convert the current position to be relative to the provided reference dimensions
+//    short oldPositionX = (short)(absCurrentPosX * referenceWidth);
+//    short oldPositionY = (short)(absCurrentPosY * referenceHeight);
+//
+//    return LiSendMousePositionEvent(displayIndex, CLAMP(oldPositionX + deltaX, 0, referenceWidth),
+//                                    CLAMP(oldPositionY + deltaY, 0, referenceHeight),
+//                                    referenceWidth, referenceHeight);
+//}
 
 // Send a mouse button event to the streaming machine
 int LiSendMouseButtonEvent(char action, int button) {
