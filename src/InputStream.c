@@ -158,36 +158,18 @@ void destroyInputStream(void) {
 static int encryptData(unsigned char* plaintext, int plaintextLen,
                        unsigned char* ciphertext, int* ciphertextLen) {
     // Starting in Gen 7, AES GCM is used for encryption
-    if (AppVersionQuad[0] >= 7) {
-        if (!PltEncryptMessage(cryptoContext, ALGORITHM_AES_GCM, 0,
-                               (unsigned char*)StreamConfig.remoteInputAesKey, sizeof(StreamConfig.remoteInputAesKey),
-                               currentAesIv, sizeof(currentAesIv),
-                               ciphertext, 16,
-                               plaintext, plaintextLen,
-                               &ciphertext[16], ciphertextLen)) {
-            return -1;
-        }
-
-        // Increment the ciphertextLen to account for the tag
-        *ciphertextLen += 16;
-        return 0;
+    if (!PltEncryptMessage(cryptoContext, ALGORITHM_AES_GCM, 0,
+                           (unsigned char*)StreamConfig.remoteInputAesKey, sizeof(StreamConfig.remoteInputAesKey),
+                           currentAesIv, sizeof(currentAesIv),
+                           ciphertext, 16,
+                           plaintext, plaintextLen,
+                           &ciphertext[16], ciphertextLen)) {
+        return -1;
     }
-    else {
-        // PKCS7 padding may need to be added in-place, so we must copy this into a buffer
-        // that can safely be modified.
-        unsigned char paddedData[ROUND_TO_PKCS7_PADDED_LEN(MAX_INPUT_PACKET_SIZE)];
 
-        memcpy(paddedData, plaintext, plaintextLen);
-
-        // Prior to Gen 7, 128-bit AES CBC is used for encryption with each message padded
-        // to the block size to ensure messages are not delayed within the cipher.
-        return PltEncryptMessage(cryptoContext, ALGORITHM_AES_CBC, CIPHER_FLAG_PAD_TO_BLOCK_SIZE,
-                                 (unsigned char*)StreamConfig.remoteInputAesKey, sizeof(StreamConfig.remoteInputAesKey),
-                                 currentAesIv, sizeof(currentAesIv),
-                                 NULL, 0,
-                                 paddedData, plaintextLen,
-                                 ciphertext, ciphertextLen) ? 0 : -1;
-    }
+    // Increment the ciphertextLen to account for the tag
+    *ciphertextLen += 16;
+    return 0;
 }
 
 static void freePacketHolder(PPACKET_HOLDER holder) {
@@ -268,7 +250,7 @@ static bool sendInputPacket(PPACKET_HOLDER holder, bool moreData) {
         // bytes of ciphertext in the most recent game controller packet as the IV for
         // future encryption. I think it may be a buffer overrun on their end but we'll have
         // to mimic it to work correctly.
-        if (AppVersionQuad[0] >= 7 && encryptedSize >= 16 + sizeof(currentAesIv)) {
+        if (encryptedSize >= 16 + sizeof(currentAesIv)) {
             memcpy(currentAesIv,
                    &encryptedBuffer[4 + encryptedSize - sizeof(currentAesIv)],
                    sizeof(currentAesIv));
@@ -306,14 +288,9 @@ static void inputSendThreadProc(void* context) {
     uint32_t multiControllerMagicLE;
     uint32_t relMouseMagicLE;
 
-    if (AppVersionQuad[0] >= 5) {
-        multiControllerMagicLE = LE32(MULTI_CONTROLLER_MAGIC_GEN5);
-        relMouseMagicLE = LE32(MOUSE_MOVE_REL_MAGIC_GEN5);
-    }
-    else {
-        multiControllerMagicLE = LE32(MULTI_CONTROLLER_MAGIC);
-        relMouseMagicLE = LE32(MOUSE_MOVE_REL_MAGIC);
-    }
+    multiControllerMagicLE = LE32(MULTI_CONTROLLER_MAGIC_GEN5);
+    relMouseMagicLE = LE32(MOUSE_MOVE_REL_MAGIC_GEN5);
+
 
     uint64_t lastMousePacketTime = 0;
     uint64_t lastPenPacketTime = 0;
@@ -686,12 +663,7 @@ int LiSendMouseMoveEvent(short deltaX, short deltaY) {
         }
 
         holder->packet.mouseMoveRel.header.size = BE32(sizeof(NV_REL_MOUSE_MOVE_PACKET) - sizeof(uint32_t));
-        if (AppVersionQuad[0] >= 5) {
-            holder->packet.mouseMoveRel.header.magic = LE32(MOUSE_MOVE_REL_MAGIC_GEN5);
-        }
-        else {
-            holder->packet.mouseMoveRel.header.magic = LE32(MOUSE_MOVE_REL_MAGIC);
-        }
+        holder->packet.mouseMoveRel.header.magic = LE32(MOUSE_MOVE_REL_MAGIC_GEN5);
 
         // Remaining fields are set in the input thread based on the latest currentRelativeMouseState values
 
@@ -714,7 +686,7 @@ int LiSendMouseMoveEvent(short deltaX, short deltaY) {
     return err;
 }
 
-// Send a mouse position update to the streaming machine
+// 向流媒体设备发送鼠标位置更新信息
 int LiSendMousePositionEvent(short displayIndex, short x, short y, short referenceWidth, short referenceHeight) {
     PPACKET_HOLDER holder;
     int err;
@@ -722,20 +694,26 @@ int LiSendMousePositionEvent(short displayIndex, short x, short y, short referen
     if (!initialized) {
         return -2;
     }
-
     PltLockMutex(&batchedInputMutex);
-
-    // Overwrite the previous mouse location with the new one
+    // 1. 必须在加锁之后检查，确保线程安全
+    // 2. 同时比对 displayIndex, x, y 以及参考宽高（防止分辨率切换时漏掉更新）
+    if (currentAbsoluteMouseState.displayIndex == displayIndex &&
+        currentAbsoluteMouseState.x == x && currentAbsoluteMouseState.y == y &&
+        currentAbsoluteMouseState.width == referenceWidth &&
+        currentAbsoluteMouseState.height == referenceHeight) {
+        PltUnlockMutex(&batchedInputMutex);
+        return 0; // 坐标和分辨率都没有变化，直接跳过
+    }
+    // 用新的鼠标位置覆盖之前的鼠标位置
     currentAbsoluteMouseState.displayIndex=displayIndex;
     currentAbsoluteMouseState.x = x;
     currentAbsoluteMouseState.y = y;
     currentAbsoluteMouseState.width = referenceWidth;
     currentAbsoluteMouseState.height = referenceHeight;
 
-    // Queue a packet holder if this is the only pending absolute mouse event
+    // 如果这是唯一一个待处理的绝对鼠标事件，则将数据包持有者加入队列
     if (!currentAbsoluteMouseState.dirty) {
-        // Set the dirty flag to claim ownership of inserting the packet holder
-        // and unlock to allow other threads to enqueue or process input.
+        // 设置脏标志以声明对插入数据包持有者的所有权，并解锁以允许其他线程入队或处理输入。
         currentAbsoluteMouseState.dirty = true;
         PltUnlockMutex(&batchedInputMutex);
 
@@ -749,28 +727,24 @@ int LiSendMousePositionEvent(short displayIndex, short x, short y, short referen
         holder->packet.mouseMoveAbs.header.magic = LE32(MOUSE_MOVE_ABS_MAGIC);
         holder->packet.mouseMoveAbs.displayIndex=displayIndex;
 
-        // Remaining fields are set in the input thread based on the latest currentAbsoluteMouseState values
-
+        // 其余字段在输入线程中根据最新的currentAbsoluteMouseState值进行设置
         err = LbqOfferQueueItem(&packetQueue, holder, &holder->entry);
         if (err != LBQ_SUCCESS) {
             LC_ASSERT(err == LBQ_BOUND_EXCEEDED);
             Limelog("Input queue reached maximum size limit\n");
             freePacketHolder(holder);
-
-            // We weren't able to insert the entry, so let the next call try again
+            //我们无法插入该条目，所以让下一个调用再试一次
             currentAbsoluteMouseState.dirty = false;
         }
     }
     else {
-        // There's already a packet holder queued to send this event
+        // 已经有了一个数据包持有者排队等待发送此事件
         PltUnlockMutex(&batchedInputMutex);
         err = 0;
     }
 
-    // This is not thread safe, but it's not a big deal because callers that want to
-    // use LiSendRelativeMotionAsMousePositionEvent() must not mix these function
-    // without synchronization (otherwise the state of the cursor on the host is
-    // undefined anyway).
+    // 这并不是线程安全的，但这不是什么大问题，因为想要使用LiSendRelativeMotionAsMousePositionEvent()
+    // 的调用者不得在没有同步的情况下混合使用这些函数（否则主机上的光标状态无论如何都是未定义的）。
     absCurrentPosX = CLAMP(x, 0, referenceWidth - 1) / (float)(referenceWidth - 1);
     absCurrentPosY = CLAMP(y, 0, referenceHeight - 1) / (float)(referenceHeight - 1);
 
@@ -778,15 +752,15 @@ int LiSendMousePositionEvent(short displayIndex, short x, short y, short referen
 }
 
 // Send a relative motion event using absolute position to the streaming machine
-int LiSendMouseMoveAsMousePositionEvent(short displayIndex, short deltaX, short deltaY, short referenceWidth, short referenceHeight) {
-    // Convert the current position to be relative to the provided reference dimensions
-    short oldPositionX = (short)(absCurrentPosX * referenceWidth);
-    short oldPositionY = (short)(absCurrentPosY * referenceHeight);
-
-    return LiSendMousePositionEvent(displayIndex, CLAMP(oldPositionX + deltaX, 0, referenceWidth),
-                                    CLAMP(oldPositionY + deltaY, 0, referenceHeight),
-                                    referenceWidth, referenceHeight);
-}
+//int LiSendMouseMoveAsMousePositionEvent(short displayIndex, short deltaX, short deltaY, short referenceWidth, short referenceHeight) {
+//    // Convert the current position to be relative to the provided reference dimensions
+//    short oldPositionX = (short)(absCurrentPosX * referenceWidth);
+//    short oldPositionY = (short)(absCurrentPosY * referenceHeight);
+//
+//    return LiSendMousePositionEvent(displayIndex, CLAMP(oldPositionX + deltaX, 0, referenceWidth),
+//                                    CLAMP(oldPositionY + deltaY, 0, referenceHeight),
+//                                    referenceWidth, referenceHeight);
+//}
 
 // Send a mouse button event to the streaming machine
 int LiSendMouseButtonEvent(char action, int button) {
@@ -804,9 +778,7 @@ int LiSendMouseButtonEvent(char action, int button) {
 
     holder->packet.mouseButton.header.size = BE32(sizeof(NV_MOUSE_BUTTON_PACKET) - sizeof(uint32_t));
     holder->packet.mouseButton.header.magic = (uint8_t)action;
-    if (AppVersionQuad[0] >= 5) {
-        holder->packet.mouseButton.header.magic++;
-    }
+    holder->packet.mouseButton.header.magic++;
     holder->packet.mouseButton.header.magic = LE32(holder->packet.mouseButton.header.magic);
     holder->packet.mouseButton.button = (uint8_t)button;
 
@@ -883,7 +855,7 @@ int LiSendKeyboardEvent2(short keyCode, char keyAction, char modifiers, char fla
     holder->packet.keyboard.flags = IS_SUNSHINE() ? flags : 0;
     holder->packet.keyboard.keyCode = LE16(keyCode);
     holder->packet.keyboard.modifiers = modifiers;
-    holder->packet.keyboard.zero2 = displayIndex; //目前zero2 没有被应用，我们利用这个传递显示索引
+    holder->packet.keyboard.displayIndex = displayIndex;
 
     err = LbqOfferQueueItem(&packetQueue, holder, &holder->entry);
     if (err != LBQ_SUCCESS) {
@@ -1009,53 +981,31 @@ static int sendControllerEventInternal(short controllerNumber, short activeGamep
         PltLockMutex(&batchedInputMutex);
     }
 
-    if (AppVersionQuad[0] == 3) {
-        // Generation 3 servers don't support multiple controllers so we send
-        // the legacy packet
-        holder->packet.controller.header.size = BE32(sizeof(NV_CONTROLLER_PACKET) - sizeof(uint32_t));
-        holder->packet.controller.header.magic = LE32(CONTROLLER_MAGIC);
-        holder->packet.controller.headerB = LE16(C_HEADER_B);
-        holder->packet.controller.buttonFlags = LE16(buttonFlags);
-        holder->packet.controller.leftTrigger = leftTrigger;
-        holder->packet.controller.rightTrigger = rightTrigger;
-        holder->packet.controller.leftStickX = LE16(leftStickX);
-        holder->packet.controller.leftStickY = LE16(leftStickY);
-        holder->packet.controller.rightStickX = LE16(rightStickX);
-        holder->packet.controller.rightStickY = LE16(rightStickY);
-        holder->packet.controller.tailA = LE32(C_TAIL_A);
-        holder->packet.controller.tailB = LE16(C_TAIL_B);
-    }
-    else {
-        // Generation 4+ servers support passing the controller number
-        holder->packet.multiController.header.size = BE32(sizeof(NV_MULTI_CONTROLLER_PACKET) - sizeof(uint32_t));
+    // Generation 4+ servers support passing the controller number
+    holder->packet.multiController.header.size = BE32(sizeof(NV_MULTI_CONTROLLER_PACKET) - sizeof(uint32_t));
 
-        // On Gen 5 servers, the header code is decremented by one
-        if (AppVersionQuad[0] >= 5) {
-            holder->packet.multiController.header.magic = LE32(MULTI_CONTROLLER_MAGIC_GEN5);
-        }
-        else {
-            holder->packet.multiController.header.magic = LE32(MULTI_CONTROLLER_MAGIC);
-        }
+    // On Gen 5 servers, the header code is decremented by one
+    holder->packet.multiController.header.magic = LE32(MULTI_CONTROLLER_MAGIC_GEN5);
 
-        holder->packet.multiController.headerB = LE16(MC_HEADER_B);
-        holder->packet.multiController.controllerNumber = LE16(controllerNumber);
-        holder->packet.multiController.activeGamepadMask = LE16(activeGamepadMask);
-        holder->packet.multiController.midB = LE16(MC_MID_B);
-        holder->packet.multiController.buttonFlags = LE16((short)buttonFlags);
-        holder->packet.multiController.leftTrigger = leftTrigger;
-        holder->packet.multiController.rightTrigger = rightTrigger;
-        holder->packet.multiController.leftStickX = LE16(leftStickX);
-        holder->packet.multiController.leftStickY = LE16(leftStickY);
-        holder->packet.multiController.rightStickX = LE16(rightStickX);
-        holder->packet.multiController.rightStickY = LE16(rightStickY);
-        holder->packet.multiController.tailA = LE16(MC_TAIL_A);
-        holder->packet.multiController.buttonFlags2 = IS_SUNSHINE() ? LE16((short)(buttonFlags >> 16)) : 0;
-        holder->packet.multiController.tailB = LE16(MC_TAIL_B);
 
-        if (enqueueHolder) {
-            // Make this new packet holder the current enqueued packet
-            currentQueuedControllerPacket[controllerNumber] = holder;
-        }
+    holder->packet.multiController.headerB = LE16(MC_HEADER_B);
+    holder->packet.multiController.controllerNumber = LE16(controllerNumber);
+    holder->packet.multiController.activeGamepadMask = LE16(activeGamepadMask);
+    holder->packet.multiController.midB = LE16(MC_MID_B);
+    holder->packet.multiController.buttonFlags = LE16((short)buttonFlags);
+    holder->packet.multiController.leftTrigger = leftTrigger;
+    holder->packet.multiController.rightTrigger = rightTrigger;
+    holder->packet.multiController.leftStickX = LE16(leftStickX);
+    holder->packet.multiController.leftStickY = LE16(leftStickY);
+    holder->packet.multiController.rightStickX = LE16(rightStickX);
+    holder->packet.multiController.rightStickY = LE16(rightStickY);
+    holder->packet.multiController.tailA = LE16(MC_TAIL_A);
+    holder->packet.multiController.buttonFlags2 = IS_SUNSHINE() ? LE16((short)(buttonFlags >> 16)) : 0;
+    holder->packet.multiController.tailB = LE16(MC_TAIL_B);
+
+    if (enqueueHolder) {
+        // Make this new packet holder the current enqueued packet
+        currentQueuedControllerPacket[controllerNumber] = holder;
     }
 
     // We can unlock the batched input mutex before enqueuing the new holder because
@@ -1142,12 +1092,8 @@ int LiSendHighResScrollEvent(short scrollAmount) {
             }
 
             holder->packet.scroll.header.size = BE32(sizeof(NV_SCROLL_PACKET) - sizeof(uint32_t));
-            if (AppVersionQuad[0] >= 5) {
-                holder->packet.scroll.header.magic = LE32(SCROLL_MAGIC_GEN5);
-            }
-            else {
-                holder->packet.scroll.header.magic = LE32(SCROLL_MAGIC);
-            }
+            holder->packet.scroll.header.magic = LE32(SCROLL_MAGIC_GEN5);
+
             holder->packet.scroll.scrollAmt1 = BE16(scrollAmount);
             holder->packet.scroll.scrollAmt2 = holder->packet.scroll.scrollAmt1;
             holder->packet.scroll.zero3 = 0;
@@ -1172,12 +1118,7 @@ int LiSendHighResScrollEvent(short scrollAmount) {
         }
 
         holder->packet.scroll.header.size = BE32(sizeof(NV_SCROLL_PACKET) - sizeof(uint32_t));
-        if (AppVersionQuad[0] >= 5) {
-            holder->packet.scroll.header.magic = LE32(SCROLL_MAGIC_GEN5);
-        }
-        else {
-            holder->packet.scroll.header.magic = LE32(SCROLL_MAGIC);
-        }
+        holder->packet.scroll.header.magic = LE32(SCROLL_MAGIC_GEN5);
         holder->packet.scroll.scrollAmt1 = BE16(scrollAmount);
         holder->packet.scroll.scrollAmt2 = holder->packet.scroll.scrollAmt1;
         holder->packet.scroll.zero3 = 0;

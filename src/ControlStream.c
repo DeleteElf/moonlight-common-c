@@ -885,9 +885,7 @@ static void confirmLongtermReferenceFrame(uint32_t trackIndex,uint32_t frameInde
     };
 
     // Send LTR frame ACK and don't wait for response
-    if (!sendMessageAndForget(SS_LTR_FRAME_ACK_PTYPE,
-                              sizeof(payload),
-                              &payload)) {
+    if (!sendMessageAndForget(SS_LTR_FRAME_ACK_PTYPE,sizeof(payload), &payload)) {
         Limelog("LTR frame ACK: Transaction failed: %d\n", (int)LastSocketError());
         ListenerCallbacks.connectionTerminated(LastSocketFail());
         return;
@@ -899,38 +897,44 @@ static void referenceFrameControlFunc(void* context) {
 
     while (!PltIsThreadInterrupted(&invalidateRefFramesThread)) {
         PQUEUED_REFERENCE_FRAME_CONTROL qfit;
-        uint32_t invalidateStartFrame;
-        uint32_t invalidateEndFrame;
-        bool invalidate = false;
         // Wait for a reference frame control message or a request to shutdown
         if (LbqWaitForQueueElement(&referenceFrameControlQueue, (void**)&qfit) != LBQ_SUCCESS) {
             // Bail if we're stopping
             return;
         }
-
+        #define MAX_TRACK_SLOTS 2
+        QUEUED_REFERENCE_FRAME_CONTROL trackStates[MAX_TRACK_SLOTS]={0}; //创建一个记录器
         do {
+            if(qfit->trackIndex>=MAX_TRACK_SLOTS){
+              Limelog("当前最多允许两条视频流数据，当前传入的是: %d\n", qfit->trackIndex);
+              free(qfit);
+              continue;
+            }
             if (qfit->invalidate) {
-                if (!invalidate) {
-                    invalidateStartFrame = qfit->startFrame;
-                    invalidateEndFrame = qfit->endFrame;
-                    invalidate = true;
+                QUEUED_REFERENCE_FRAME_CONTROL* trackState=&trackStates[qfit->trackIndex];
+                if (!trackState->invalidate) {
+                    trackState->startFrame = qfit->startFrame;
+                    trackState->endFrame = qfit->endFrame;
+                    trackState->invalidate = true;
                 }
                 else {
                     // Aggregate all lost frames into one range
-                    LC_ASSERT(qfit->endFrame >= invalidateEndFrame);
-                    invalidateEndFrame = qfit->endFrame;
+                    LC_ASSERT(qfit->endFrame >= trackState->endFrame);
+                    trackState->endFrame = qfit->endFrame;
                 }
             }
-            else {
-                // Send LTR frame ACK
+            else { // Send LTR frame ACK
                 confirmLongtermReferenceFrame(qfit->trackIndex, qfit->startFrame);
             }
             free(qfit);
         } while (LbqPollQueueElement(&referenceFrameControlQueue, (void**)&qfit) == LBQ_SUCCESS);
 
-        if (invalidate) {
+        for(int i=0;i<MAX_TRACK_SLOTS;i++){
+          QUEUED_REFERENCE_FRAME_CONTROL trackState=trackStates[i];
+          if (trackState.invalidate) {
             // Send the reference frame invalidation request
-            requestInvalidateReferenceFrames(invalidateStartFrame, invalidateEndFrame,qfit->trackIndex);
+            requestInvalidateReferenceFrames(trackState.startFrame, trackState.endFrame,i);
+          }
         }
     }
 }
@@ -1173,6 +1177,7 @@ int startControlStream(int channelCount) {
     }
 
     // Only create the reference frame invalidation thread if RFI is enabled
+//    if (isReferenceFrameInvalidationEnabled() && !StreamConfig.fecInNetwork) {
     if (isReferenceFrameInvalidationEnabled()) {
         err = PltCreateThread("InvRefFrames", referenceFrameControlFunc, NULL, &invalidateRefFramesThread);
         if (err != 0) {

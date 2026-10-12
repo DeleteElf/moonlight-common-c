@@ -139,7 +139,7 @@ void notifyFrameLost(int trackIndex,unsigned int frameNumber, bool speculative);
 
 void initializeVideoStream(int displayCount);
 void destroyVideoStream(void);
-void notifyKeyFrameReceived(int displayIndex);
+void notifyKeyFrameReceived(int displayIndex,int frameIndex);
 int startVideoStream(void* rendererContext, int drFlags);
 void stopVideoStream(void);
 

@@ -26,7 +26,7 @@ typedef struct _NV_KEYBOARD_PACKET {
     char flags; // Sunshine extension (always 0 for GFE)
     short keyCode;
     char modifiers;
-    short zero2;
+    short displayIndex;
 } NV_KEYBOARD_PACKET, *PNV_KEYBOARD_PACKET;
 
 #define UTF8_TEXT_EVENT_MAGIC 0x00000017

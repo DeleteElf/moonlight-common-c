@@ -53,7 +53,8 @@ typedef struct _STREAM_CONFIGURATION {
     // includes error correction data, so the actual encoder bitrate will be
     // about 20% lower when using the standard 20% FEC configuration.
     int bitrate;
-    int fecInNetwork;
+    // 0 disable 1 FecDepacketizeKeepRtpPacketAndSize 2 FecDepacketizeKeepRtpPacket 3 FecDepacketizeKeepRtpData
+    int fecLevel;
 
     // Max video packet size in bytes (use 1024 if unsure). If STREAM_CFG_AUTO
     // determines the stream is remote (see below), it will cap this value at
@@ -105,7 +106,7 @@ typedef struct _STREAM_CONFIGURATION {
 
 // Use this function to zero the stream configuration when allocated on the stack or heap
 void LiInitializeStreamConfiguration(PSTREAM_CONFIGURATION streamConfig);
-
+void LiSubmitFullFrameBuffer(char* buffer,int length);
 // These identify codec configuration data in the buffer lists
 // of frames identified as IDR frames for H.264 and HEVC formats.
 // For other codecs, all data is marked as BUFFER_TYPE_PICDATA.
@@ -612,7 +613,7 @@ int LiSendMousePositionEvent(short displayIndex,short x, short y, short referenc
 // This function can be useful when mouse capture is the only feasible way to receive mouse input,
 // like on Android or iOS, and the OS cannot provide raw unaccelerated mouse motion when capturing.
 // Using this function avoids double-acceleration in cases when the client motion is also accelerated.
-int LiSendMouseMoveAsMousePositionEvent(short displayIndex, short deltaX, short deltaY, short referenceWidth, short referenceHeight);
+//int LiSendMouseMoveAsMousePositionEvent(short displayIndex, short deltaX, short deltaY, short referenceWidth, short referenceHeight);
 
 // Error return value to indicate that the requested functionality is not supported by the host
 #define LI_ERR_UNSUPPORTED -5501
