@@ -1199,23 +1199,7 @@ int LiGetPendingVideoFrames(int trackIndex) {
     return LbqGetItemCount(&depacketizers->data[trackIndex].decodeUnitQueue);
 }
 
-
-PLENTRY CreateEntry(char* data, int offset, int length,int ssrc){
-    // 5) 分配 LENTRY 节点
-    PLENTRY entry = (PLENTRY)calloc(1, sizeof(LENTRY)+length);
-    if (!entry) {
-        return NULL;
-    }
-    entry->data = &data[offset];
-    entry->length = length;
-    entry->ssrc = ssrc;
-    // 6) 获取对应节点的精准 BufferType (如 BUFFER_TYPE_SPS, BUFFER_TYPE_PPS, BUFFER_TYPE_PICDATA)
-    entry->bufferType = getBufferFlags(entry->data, entry->length);
-
-    return entry;
-}
-
-void LiSubmitFullFrameBuffer(char* buffer, int length) {
+void LiSubmitFullFrameBuffer(char* buffer, int length) {// , PRTPV_QUEUE_ENTRY packetEntry
     PRTP_PACKET packet = (PRTP_PACKET)&buffer[0];
     packet->sequenceNumber = BE16(packet->sequenceNumber);
     packet->timestamp = BE32(packet->timestamp);
@@ -1235,7 +1219,8 @@ void LiSubmitFullFrameBuffer(char* buffer, int length) {
 
     PNV_VIDEO_PACKET nvPacket = (PNV_VIDEO_PACKET)(buffer + dataOffset);
     nvPacket->frameIndex = LE32(nvPacket->frameIndex);
-
+//    Limelog("正在处理 ssrc[%d]sequenceNumber[%d]frameIndex[%d]\n",
+//                packet->ssrc, packet->sequenceNumber,nvPacket->frameIndex);
     BUFFER_DESC currentPos;
     currentPos.data = (char*)(nvPacket + 1);
     currentPos.offset = 0;
@@ -1331,15 +1316,16 @@ void LiSubmitFullFrameBuffer(char* buffer, int length) {
         return; // 剥离后无数据，退出
     }
 
-    PLENTRY head = NULL;
-    PLENTRY tail = NULL;
-    uint32_t totalLength = 0;
-
+//    bool containsPicData=false;
     // 检查剥离头部后是否为 IDR 帧开头
     if (isIdrFrameStart(&currentPos)) {
         du.frameType = FRAME_TYPE_IDR;
+//        containsPicData=true;
         notifyKeyFrameReceived(packet->ssrc,nvPacket->frameIndex);
     }
+
+    depacketizer->nalChainHead = depacketizer->nalChainTail = NULL;
+    depacketizer->nalChainDataLength = 0;
 
     // 3. 通用高效 NALU 循环提取（适配 IDR 和 P 帧，防止结构破坏）
     while (currentPos.length > 0) {
@@ -1347,37 +1333,18 @@ void LiSubmitFullFrameBuffer(char* buffer, int length) {
         while (currentPos.length > 0 && (isAccessUnitDelimiter(&currentPos) || isSeiNal(&currentPos))) {
             skipToNextNal(&currentPos);
         }
-
         if (currentPos.length == 0) break;
-
         int start = currentPos.offset;
-
         // 推进到下一个 NALU 开始位置
         skipToNextNalOrEnd(&currentPos);
 
         int nalLength = currentPos.offset - start;
         if (nalLength > 0) {
-            PLENTRY entry = CreateEntry(currentPos.data, start, nalLength, packet->ssrc);
-            if (!entry) break;
-
-            if (tail == NULL) {
-                head = tail = entry;
-            } else {
-                tail->next = entry;
-                tail = entry;
-            }
-            totalLength += entry->length;
+            queueFragment(depacketizer,NULL,currentPos.data, start, nalLength, packet->ssrc);//直接入队
         }
     }
-
-    if (head == NULL || totalLength == 0) {
-        Limelog("收到损坏的数据,长度0或头为null ssrc[%d]sequenceNumber[%d]frameIndex[%d]dataOffset[%d]length[%d]\n",
-                packet->ssrc,packet->sequenceNumber,nvPacket->frameIndex,dataOffset,length);
-        return; // 无有效载荷
-    }
-
-    du.fullLength = totalLength;
-    du.bufferList = head;
+    du.fullLength = depacketizer->nalChainDataLength;
+    du.bufferList = depacketizer->nalChainHead;
 
     // 4. 正确的时间戳计算（解决渲染卡顿）
     uint64_t nowUs = PltGetMicroseconds();
@@ -1397,7 +1364,7 @@ void LiSubmitFullFrameBuffer(char* buffer, int length) {
     if (!qdu) {
         Limelog("内存分配失败: qdu\n");
         // 失败时需要释放 LENTRY 链表
-        PLENTRY curr = head;
+        PLENTRY curr = depacketizer->nalChainHead;
         while (curr != NULL) {
             PLENTRY next = curr->next;
             free(curr);
@@ -1412,7 +1379,7 @@ void LiSubmitFullFrameBuffer(char* buffer, int length) {
     int err = LbqOfferQueueItem(&depacketizer->decodeUnitQueue, qdu, &qdu->entry);
     if (err != LBQ_SUCCESS) {
         Limelog("入队失败 decodeUnitQueue 溢出或关闭: %d\n", err);
-        PLENTRY curr = head;
+        PLENTRY curr = depacketizer->nalChainHead;
         while (curr != NULL) {
             PLENTRY next = curr->next;
             free(curr);
@@ -1421,4 +1388,10 @@ void LiSubmitFullFrameBuffer(char* buffer, int length) {
         free(qdu);
         return;
     }
+    // Notify the control connection
+    connectionReceivedCompleteFrame(depacketizer->trackIndex, nvPacket->frameIndex, nvPacket->extraFlags & NV_VIDEO_PACKET_EXTRA_FLAG_LTR_FRAME);
+    // Clear frame drops
+    depacketizer->consecutiveFrameDrops = 0;
+    // Move the start of our (potential) RFI window to the next frame
+    depacketizer->startFrameNumber = depacketizer->nextFrameNumber;
 }
