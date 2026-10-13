@@ -122,8 +122,7 @@ int LbqOfferQueueItem(PLINKED_BLOCKING_QUEUE queueHead, void* data, PLINKED_BLOC
     PltUnlockMutex(&queueHead->mutex);
 
     if (wasEmpty) {
-        // Only call PltSignalConditionVariable() when transitioning from
-        // empty -> non-empty to avoid a useless syscall for each new entry.
+        //仅在从空状态转变为非空状态时调用PltSignalConditionVariable()，以避免每次新进入时都进行无用的系统调用。
         PltSignalConditionVariable(&queueHead->cond);
     }
 

@@ -83,7 +83,7 @@ void initializeVideoDepacketizer(int pktSize,int trackCount) {
     depacketizers->data= malloc(sizeof(VIDEO_DEPACKETIZER)*trackCount);//多少个轨道，我们就需要多少个解包器
     for (int i = 0; i < trackCount; ++i) {
         VIDEO_DEPACKETIZER depacketizer;
-        LbqInitializeLinkedBlockingQueue(&depacketizer.decodeUnitQueue, 15);
+        LbqInitializeLinkedBlockingQueue(&depacketizer.decodeUnitQueue, 20);
         depacketizer.trackIndex=i;
         depacketizer.startFrameNumber = 0;
         depacketizer.nextFrameNumber=1;//check every pkt
@@ -1393,5 +1393,5 @@ void LiSubmitFullFrameBuffer(char* buffer, int length) {// , PRTPV_QUEUE_ENTRY p
     // Clear frame drops
     depacketizer->consecutiveFrameDrops = 0;
     // Move the start of our (potential) RFI window to the next frame
-    depacketizer->startFrameNumber = depacketizer->nextFrameNumber;
+    depacketizer->startFrameNumber = depacketizer->nextFrameNumber=nvPacket->frameIndex+1;
 }
