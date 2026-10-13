@@ -1387,20 +1387,26 @@ void LiSubmitFullFrameBuffer(char* buffer, int length) {// , PRTPV_QUEUE_ENTRY p
     // 4. 将打包好的帧推进 Moonlight 的核心解码队列 (这会唤醒 decoderThreadProc 线程)
     int err = LbqOfferQueueItem(&depacketizer->decodeUnitQueue, qdu, &qdu->entry);
     if (err == LBQ_BOUND_EXCEEDED) {
-      //这种只会发生在网络拥堵的时候，突然一瞬间很多数据包到达
-      if(!depacketizer->waitingForIdrFrame){//等待期间不要反复申请，防止更卡
-        Limelog("Video解码单元溢出=====> %d\n",depacketizer->trackIndex);
-        // RFI recovery is not supported here
-        depacketizer->waitingForIdrFrame = true;
-        dropFrameState(depacketizer);
-        // Free the DU we were going to queue
-        free(qdu);
-        // Free all frames in the decode unit queue
-        freeDecodeUnitList(LbqFlushQueueItems(&depacketizer->decodeUnitQueue),depacketizer->trackIndex);
-        // Request an IDR frame to recover
-        LiRequestIdrFrame(depacketizer->trackIndex);
-      }
-      return;
+        //这种只会发生在网络拥堵的时候，突然一瞬间很多数据包到达
+        if (!depacketizer->waitingForIdrFrame) {//等待期间不要反复申请，防止更卡
+            Limelog("Video解码单元溢出=====> %d\n", depacketizer->trackIndex);
+            // RFI recovery is not supported here
+            depacketizer->waitingForIdrFrame = true;
+            depacketizer->consecutiveFrameDrops = 0;
+            PLENTRY curr = qdu->decodeUnit.bufferList;
+            while (curr != NULL) {
+                PLENTRY next = curr->next;
+                free(curr); // 如果你是用 calloc(1, sizeof(LENTRY) + length) 分配的，直接 free(curr) 即可
+                curr = next;
+            }
+            // Free the DU we were going to queue
+            free(qdu);
+            // Free all frames in the decode unit queue
+            freeDecodeUnitList(LbqFlushQueueItems(&depacketizer->decodeUnitQueue), depacketizer->trackIndex);
+            // Request an IDR frame to recover
+            LiRequestIdrFrame(depacketizer->trackIndex);
+        }
+        return;
     }
 
     // Notify the control connection
