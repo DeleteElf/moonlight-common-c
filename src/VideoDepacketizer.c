@@ -83,7 +83,7 @@ void initializeVideoDepacketizer(int pktSize,int trackCount) {
     depacketizers->data= malloc(sizeof(VIDEO_DEPACKETIZER)*trackCount);//多少个轨道，我们就需要多少个解包器
     for (int i = 0; i < trackCount; ++i) {
         VIDEO_DEPACKETIZER depacketizer;
-        LbqInitializeLinkedBlockingQueue(&depacketizer.decodeUnitQueue, 20);
+        LbqInitializeLinkedBlockingQueue(&depacketizer.decodeUnitQueue, 15);
         depacketizer.trackIndex=i;
         depacketizer.startFrameNumber = 0;
         depacketizer.nextFrameNumber=1;//check every pkt
@@ -1320,13 +1320,25 @@ void LiSubmitFullFrameBuffer(char* buffer, int length) {// , PRTPV_QUEUE_ENTRY p
     // 检查剥离头部后是否为 IDR 帧开头
     if (isIdrFrameStart(&currentPos)) {
         du.frameType = FRAME_TYPE_IDR;
+        if(depacketizer->waitingForIdrFrame)
+          depacketizer->waitingForIdrFrame=false;
 //        containsPicData=true;
         notifyKeyFrameReceived(packet->ssrc,nvPacket->frameIndex);
     }
-
+    if(depacketizer->waitingForIdrFrame){//如果当前处于等待关键帧，那么不是关键帧的数据，我们都不要，让画面暂停！
+      depacketizer->consecutiveFrameDrops++;
+      if (depacketizer->consecutiveFrameDrops == CONSECUTIVE_DROP_LIMIT) {
+        Limelog("丢弃数满了，再次申请关键帧！ssrc:%d\n",depacketizer->trackIndex);
+        // Restart the count
+        depacketizer->consecutiveFrameDrops = 0;
+        // Request an IDR frame
+        depacketizer->waitingForIdrFrame = true;
+        LiRequestIdrFrame(depacketizer->trackIndex);
+      }
+      return;
+    }
     depacketizer->nalChainHead = depacketizer->nalChainTail = NULL;
     depacketizer->nalChainDataLength = 0;
-
     // 3. 通用高效 NALU 循环提取（适配 IDR 和 P 帧，防止结构破坏）
     while (currentPos.length > 0) {
         // 清理 NAL 之间的 Padding 或 SEI
@@ -1345,12 +1357,10 @@ void LiSubmitFullFrameBuffer(char* buffer, int length) {// , PRTPV_QUEUE_ENTRY p
     }
     du.fullLength = depacketizer->nalChainDataLength;
     du.bufferList = depacketizer->nalChainHead;
-
     // 4. 正确的时间戳计算（解决渲染卡顿）
     uint64_t nowUs = PltGetMicroseconds();
     du.receiveTimeUs = nowUs;
     du.enqueueTimeUs = nowUs;
-
     // 使用 RTP Timestamp (90kHz 时钟) 转换为微秒时间戳，保证渲染器平滑显示
     // 如果 RTP timestamp 不可用，则回退到 nowUs
     if (packet->timestamp != 0) {
@@ -1358,7 +1368,6 @@ void LiSubmitFullFrameBuffer(char* buffer, int length) {// , PRTPV_QUEUE_ENTRY p
     } else {
         du.presentationTimeUs = nowUs;
     }
-
     // 5. 压入解码队列
     PQUEUED_DECODE_UNIT qdu = (PQUEUED_DECODE_UNIT)malloc(sizeof(QUEUED_DECODE_UNIT));
     if (!qdu) {
@@ -1377,21 +1386,28 @@ void LiSubmitFullFrameBuffer(char* buffer, int length) {// , PRTPV_QUEUE_ENTRY p
     memcpy(&qdu->decodeUnit, &du, sizeof(DECODE_UNIT));
     // 4. 将打包好的帧推进 Moonlight 的核心解码队列 (这会唤醒 decoderThreadProc 线程)
     int err = LbqOfferQueueItem(&depacketizer->decodeUnitQueue, qdu, &qdu->entry);
-    if (err != LBQ_SUCCESS) {
-        Limelog("入队失败 decodeUnitQueue 溢出或关闭: %d\n", err);
-        PLENTRY curr = depacketizer->nalChainHead;
-        while (curr != NULL) {
-            PLENTRY next = curr->next;
-            free(curr);
-            curr = next;
-        }
+    if (err == LBQ_BOUND_EXCEEDED) {
+      //这种只会发生在网络拥堵的时候，突然一瞬间很多数据包到达
+      if(!depacketizer->waitingForIdrFrame){//等待期间不要反复申请，防止更卡
+        Limelog("Video解码单元溢出=====> %d\n",depacketizer->trackIndex);
+        // RFI recovery is not supported here
+        depacketizer->waitingForIdrFrame = true;
+        dropFrameState(depacketizer);
+        // Free the DU we were going to queue
         free(qdu);
-        return;
+        // Free all frames in the decode unit queue
+        freeDecodeUnitList(LbqFlushQueueItems(&depacketizer->decodeUnitQueue),depacketizer->trackIndex);
+        // Request an IDR frame to recover
+        LiRequestIdrFrame(depacketizer->trackIndex);
+      }
+      return;
     }
+
     // Notify the control connection
     connectionReceivedCompleteFrame(depacketizer->trackIndex, nvPacket->frameIndex, nvPacket->extraFlags & NV_VIDEO_PACKET_EXTRA_FLAG_LTR_FRAME);
     // Clear frame drops
     depacketizer->consecutiveFrameDrops = 0;
     // Move the start of our (potential) RFI window to the next frame
-    depacketizer->startFrameNumber = depacketizer->nextFrameNumber=nvPacket->frameIndex+1;
+    depacketizer->startFrameNumber = depacketizer->nextFrameNumber;
+    depacketizer->nextFrameNumber=nvPacket->frameIndex+1;
 }
