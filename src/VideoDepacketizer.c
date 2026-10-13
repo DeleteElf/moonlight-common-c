@@ -1357,6 +1357,7 @@ void LiSubmitFullFrameBuffer(char* buffer, int length) {// , PRTPV_QUEUE_ENTRY p
     }
     du.fullLength = depacketizer->nalChainDataLength;
     du.bufferList = depacketizer->nalChainHead;
+    depacketizer->nalChainHead=NULL;
     // 4. 正确的时间戳计算（解决渲染卡顿）
     uint64_t nowUs = PltGetMicroseconds();
     du.receiveTimeUs = nowUs;
@@ -1373,7 +1374,8 @@ void LiSubmitFullFrameBuffer(char* buffer, int length) {// , PRTPV_QUEUE_ENTRY p
     if (!qdu) {
         Limelog("内存分配失败: qdu\n");
         // 失败时需要释放 LENTRY 链表
-        PLENTRY curr = depacketizer->nalChainHead;
+        PLENTRY curr = du.bufferList;
+        du.bufferList=NULL;
         while (curr != NULL) {
             PLENTRY next = curr->next;
             free(curr);
@@ -1394,6 +1396,7 @@ void LiSubmitFullFrameBuffer(char* buffer, int length) {// , PRTPV_QUEUE_ENTRY p
             depacketizer->waitingForIdrFrame = true;
             depacketizer->consecutiveFrameDrops = 0;
             PLENTRY curr = qdu->decodeUnit.bufferList;
+            qdu->decodeUnit.bufferList=NULL;
             while (curr != NULL) {
                 PLENTRY next = curr->next;
                 free(curr); // 如果你是用 calloc(1, sizeof(LENTRY) + length) 分配的，直接 free(curr) 即可
