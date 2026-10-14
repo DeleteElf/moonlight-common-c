@@ -1391,7 +1391,7 @@ void LiSubmitFullFrameBuffer(char* buffer, int length) {// , PRTPV_QUEUE_ENTRY p
     if (err == LBQ_BOUND_EXCEEDED) {
         //这种只会发生在网络拥堵的时候，突然一瞬间很多数据包到达
         if (!depacketizer->waitingForIdrFrame) {//等待期间不要反复申请，防止更卡
-            Limelog("Video解码单元溢出=====> %d\n", depacketizer->trackIndex);
+            Limelog("Video解码单元溢出=====>ssrc:%d,frameIndex:%d\n", depacketizer->trackIndex,nvPacket->frameIndex);
             // RFI recovery is not supported here
             depacketizer->waitingForIdrFrame = true;
             depacketizer->consecutiveFrameDrops = 0;
