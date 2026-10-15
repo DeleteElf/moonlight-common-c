@@ -204,10 +204,13 @@ static void VideoReceiveThreadProc(void* context) {
                 buffer = NULL;
             }
         }else{
-            submitFullFrameBuffer(buffer,length, (PRTPV_QUEUE_ENTRY) &buffer[length]);//直接提交数据给解码单元
+            queueStatus = SubmitFullFrameBuffer(buffer,length, (PRTPV_QUEUE_ENTRY) &buffer[length]);//直接提交数据给解码单元
+            if (queueStatus == RTPF_RET_QUEUED) {
+                // The queue owns the buffer
+                buffer = NULL;
+            }
         }
     }
-
     if (buffer != NULL) {
         free(buffer);
     }
