@@ -204,7 +204,7 @@ static void VideoReceiveThreadProc(void* context) {
                 buffer = NULL;
             }
         }else{
-            LiSubmitFullFrameBuffer(buffer,length);//直接提交数据给解码单元
+            submitFullFrameBuffer(buffer,length, (PRTPV_QUEUE_ENTRY) &buffer[length]);//直接提交数据给解码单元
         }
     }
 

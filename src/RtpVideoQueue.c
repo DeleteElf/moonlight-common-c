@@ -749,7 +749,7 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
             }
             else {
                 // Submit all FEC blocks to the depacketizer
-                submitCompletedFrame(trackIndex,queue);
+                submitCompletedFrame(packet->ssrc,queue);
 
                 // submitCompletedFrame() should have consumed all completed FEC data
                 LC_ASSERT(queue->completedFecBlockList.head == NULL);
