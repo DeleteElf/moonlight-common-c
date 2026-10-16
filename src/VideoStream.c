@@ -98,9 +98,12 @@ static void VideoReceiveThreadProc(void* context) {
     switch (StreamConfig.fecLevel) {//如果配置了fecInNetwork，则自定义配置的 packetSize 无效
         //一个数据包 1008+32 计算，不计算加密需求，255个数据包是一个分块，一个分块255*1008+32=257072
         case 2: //包含32个字节的数据包头
+            decryptedSize=StreamConfig.packetSize*255+MAX_RTP_HEADER_SIZE;//提供最大缓存，反正不用反复分配，这个已经是最省状态
+            Limelog("使用fec网络层解包 级别2 packet size: %d bytes\n",decryptedSize);
+            break;
         case 3: //不包含数据包头
             decryptedSize=StreamConfig.packetSize*255*4+MAX_RTP_HEADER_SIZE;//提供最大缓存，反正不用反复分配，这个已经是最省状态
-            Limelog("使用fec网络层解包 packet size: %d bytes\n",decryptedSize);
+            Limelog("使用fec网络层解包 级别3 packet size: %d bytes\n",decryptedSize);
             break;
         default:
             break;
@@ -183,7 +186,7 @@ static void VideoReceiveThreadProc(void* context) {
             Limelog("接收到不符合要求大小的数据,丢弃!\n");
             continue;
         }
-//        if(StreamConfig.fecLevel<2) {//如果是原来的数据包逻辑
+        if(StreamConfig.fecLevel!=3) {//如果是原来的数据包逻辑
             // Convert fields to host byte-order
             packet = (PRTP_PACKET)&buffer[0];
             packet->ssrc = BE32(packet->ssrc);
@@ -200,11 +203,14 @@ static void VideoReceiveThreadProc(void* context) {
                 // The queue owns the buffer
                 buffer = NULL;
             }
-//        }else{
-//            LiSubmitFullFrameBuffer(buffer,length);//直接提交数据给解码单元
-//        }
+        }else{
+            queueStatus = SubmitFullFrameBuffer(buffer,length, (PRTPV_QUEUE_ENTRY) &buffer[length]);//直接提交数据给解码单元
+            if (queueStatus == RTPF_RET_QUEUED) {
+                // The queue owns the buffer
+                buffer = NULL;
+            }
+        }
     }
-
     if (buffer != NULL) {
         free(buffer);
     }
