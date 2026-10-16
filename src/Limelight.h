@@ -1009,8 +1009,8 @@ bool LiGetHdrMetadata(PSS_HDR_METADATA metadata);
 // the prior frame. Rather than wait for a new frame and return DR_NEED_IDR for that one, they can just
 // call this API instead. Note that this function does not guarantee that the *next* frame will be an IDR
 // frame, just that an IDR frame will arrive soon.
-void LiRequestIdrFrame(int trackIndex);
-
+void LiRequestIdrFrame(int ssrc);
+void LiValidateAndRequestIdrFrame(int ssrc);
 // This function returns any extended feature flags supported by the host.
 #define LI_FF_PEN_TOUCH_EVENTS        0x01 // LiSendTouchEvent()/LiSendPenEvent() supported
 #define LI_FF_CONTROLLER_TOUCH_EVENTS 0x02 // LiSendControllerTouchEvent() supported

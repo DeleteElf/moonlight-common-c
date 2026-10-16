@@ -87,8 +87,8 @@ void initializeVideoDepacketizer(int pktSize,int trackCount) {
         depacketizer.trackIndex=i;
         depacketizer.startFrameNumber = 0;
         depacketizer.nextFrameNumber=1;//check every pkt
-        depacketizer.waitingForNextSuccessfulFrame = false;
-        depacketizer.waitingForIdrFrame = true;
+        depacketizer.waitingForNextSuccessfulFrame = true;
+        depacketizer.waitingForIdrFrame = false;
         depacketizer.waitingForRefInvalFrame = false;
         depacketizer.lastPacketInStream = UINT32_MAX;
         depacketizer.decodingFrame = false;
@@ -138,10 +138,10 @@ static void dropFrameState(PVIDEO_DEPACKETIZER depacketizer) {
     // We're dropping frame state now
     depacketizer->dropStatePending = false;
 
-    if (depacketizer->strictIdrFrameWait || !depacketizer->idrFrameProcessed || depacketizer->waitingForIdrFrame) {
+    if (depacketizer->strictIdrFrameWait || !depacketizer->idrFrameProcessed || depacketizer->waitingForNextSuccessfulFrame) {
         // We'll need an IDR frame now if we're in non-RFI mode, if we've never
         // received an IDR frame, or if we explicitly need an IDR frame.
-        depacketizer->waitingForIdrFrame = true;
+        depacketizer->waitingForNextSuccessfulFrame = true;
     }
     else {
         depacketizer->waitingForRefInvalFrame = true;
@@ -154,10 +154,7 @@ static void dropFrameState(PVIDEO_DEPACKETIZER depacketizer) {
 
         // Restart the count
         depacketizer->consecutiveFrameDrops = 0;
-
-        // Request an IDR frame
-        depacketizer->waitingForIdrFrame = true;
-        LiRequestIdrFrame(depacketizer->trackIndex);
+        LiValidateAndRequestIdrFrame(depacketizer->trackIndex);
     }
     cleanupFrameState(depacketizer);
 }
@@ -547,9 +544,6 @@ static void reassembleFrame(PVIDEO_DEPACKETIZER depacketizer,int frameNumber, bo
                 if (LbqOfferQueueItem(&depacketizer->decodeUnitQueue, qdu, &qdu->entry) == LBQ_BOUND_EXCEEDED) {
                     Limelog("Video decode unit queue overflow=====> %d\n",depacketizer->trackIndex);
 
-                    // RFI recovery is not supported here
-                    depacketizer->waitingForIdrFrame = true;
-
                     // Clear NAL state for the frame that we failed to enqueue
                     depacketizer->nalChainHead = qdu->decodeUnit.bufferList;
                     qdu->decodeUnit.bufferList = NULL ;
@@ -563,7 +557,7 @@ static void reassembleFrame(PVIDEO_DEPACKETIZER depacketizer,int frameNumber, bo
                     freeDecodeUnitList(LbqFlushQueueItems(&depacketizer->decodeUnitQueue),depacketizer->trackIndex);
 
                     // Request an IDR frame to recover
-                    LiRequestIdrFrame(depacketizer->trackIndex);
+                    LiValidateAndRequestIdrFrame(depacketizer->trackIndex);
                     return;
                 }
             }
@@ -745,9 +739,6 @@ static void processAvcHevcRtpPayloadSlow(PVIDEO_DEPACKETIZER depacketizer,PBUFFE
 
 // 清空解码单元队列，并确保提交给解码器的下一帧为IDR帧
 void requestDecoderRefresh(int trackIndex) {
-    // Wait for the next IDR frame
-    depacketizers->data[trackIndex].waitingForIdrFrame = true;
-    
     // Flush the decode unit queue
     freeDecodeUnitList(LbqFlushQueueItems(&depacketizers->data[trackIndex].decodeUnitQueue),trackIndex);
     
@@ -756,7 +747,7 @@ void requestDecoderRefresh(int trackIndex) {
     depacketizers->data[trackIndex].dropStatePending = true;
     
     // Request the IDR frame
-    LiRequestIdrFrame(trackIndex);//todo:如果需要的化，可以分屏幕送idr的请求
+    LiValidateAndRequestIdrFrame(trackIndex);//todo:如果需要的化，可以分屏幕送idr的请求
 }
 
 // Return 1 if packet is the first one in the frame
@@ -818,8 +809,8 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
         depacketizer->decodingFrame = false;
         depacketizer->nextFrameNumber = frameIndex + 1;
         dropFrameState(depacketizer);
-        if (depacketizer->waitingForIdrFrame) {
-            LiRequestIdrFrame(depacketizer->trackIndex);
+        if (depacketizer->waitingForNextSuccessfulFrame) {
+            LiValidateAndRequestIdrFrame(depacketizer->trackIndex);
         }
         else {
             connectionDetectedFrameLoss(depacketizer->trackIndex, depacketizer->startFrameNumber, frameIndex);
@@ -1056,8 +1047,8 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
                depacketizer-> decodingFrame = false;
                depacketizer-> nextFrameNumber = frameIndex + 1;
                 dropFrameState(depacketizer);
-                if (depacketizer->waitingForIdrFrame) {
-                    LiRequestIdrFrame(depacketizer->trackIndex);
+                if (depacketizer->waitingForNextSuccessfulFrame) {
+                    LiValidateAndRequestIdrFrame(depacketizer->trackIndex);
                 }
                 else {
                     connectionDetectedFrameLoss(depacketizer->trackIndex,depacketizer->startFrameNumber, frameIndex);
@@ -1078,16 +1069,10 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
 
         // If we can't submit this frame due to a discontinuity in the bitstream,
         // inform the host (if needed) and drop the data.
-        if (depacketizer->waitingForIdrFrame || depacketizer->waitingForRefInvalFrame) {
+        if (depacketizer->waitingForNextSuccessfulFrame || depacketizer->waitingForRefInvalFrame) {
             // IDR wait takes priority over RFI wait (and an IDR frame will satisfy both)
-            if (depacketizer->waitingForIdrFrame) {
-                // Limelog("等待IDR关键帧=================>ssrc: %d\n",depacketizer->trackIndex);
-                // We wait for the first fully received frame after a loss to approximate
-                // detection of the recovery of the network. Requesting an IDR frame while
-                // the network is unstable will just contribute to congestion collapse.
-                if (depacketizer->waitingForNextSuccessfulFrame) {
-                    LiRequestIdrFrame(depacketizer->trackIndex);
-                }
+            if (depacketizer->waitingForNextSuccessfulFrame) {
+                LiValidateAndRequestIdrFrame(depacketizer->trackIndex);
             }
             else {
                 // If we need an RFI frame first, then drop this frame
@@ -1135,7 +1120,7 @@ void notifyFrameLost(int trackIndex,unsigned int frameNumber, bool speculative) 
     dropFrameState(depacketizer);
 
     // If dropFrameState() determined that RFI was usable, issue it now
-    if (!depacketizer->waitingForIdrFrame) {
+    if (!depacketizer->waitingForNextSuccessfulFrame) {
         LC_ASSERT(depacketizer->waitingForRefInvalFrame);
 
         if (speculative) {
@@ -1151,6 +1136,14 @@ void notifyFrameLost(int trackIndex,unsigned int frameNumber, bool speculative) 
         // Notify the host that we lost this one
         connectionDetectedFrameLoss(depacketizer->trackIndex,depacketizer->startFrameNumber, frameNumber);
     }
+}
+
+// Request an IDR frame on demand by the decoder
+void LiValidateAndRequestIdrFrame(int ssrc) {
+    if(depacketizers->data[ssrc].waitingForIdrFrame)
+      return;
+    depacketizers->data[ssrc].waitingForIdrFrame=true;
+    LiRequestIdrFrame(ssrc);
 }
 
 // Add an RTP Packet to the queue

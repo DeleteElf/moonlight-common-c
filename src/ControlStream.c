@@ -287,16 +287,16 @@ static void queueFrameInvalidationTuple(int trackIndex,uint32_t startFrame, uint
             }
         }
     }
-    LiRequestIdrFrame(trackIndex);
+    LiValidateAndRequestIdrFrame(trackIndex);
 }
 
 // Request an IDR frame on demand by the decoder
-void LiRequestIdrFrame(int trackIndex) {
+void LiRequestIdrFrame(int ssrc) {
     // Any reference frame invalidation requests should be dropped now.
     // We require a full IDR frame to recover.
     freeBasicLbqList(LbqFlushQueueItems(&referenceFrameControlQueue));
 
-    idrEvents[trackIndex].signal=true;//传递轨道索引
+    idrEvents[ssrc].signal=true;//传递轨道索引
     // Request the IDR frame
     PltSetEvent(&idrFrameRequiredEvent);
 }
@@ -325,7 +325,7 @@ void connectionReceivedCompleteFrame(int trackIndex,uint32_t frameIndex, bool fr
                 LC_ASSERT(false);
                 Limelog("Couldn't queue LTR ACK because the list has reached maximum size limit\n");
                 free(qfit);
-                LiRequestIdrFrame(trackIndex);
+                LiValidateAndRequestIdrFrame(trackIndex);
             }
         }
     }
@@ -814,7 +814,7 @@ static void lossStatsThreadFunc(void* context) {
     }
 }
 
-static void requestIdrFrame(int trackIndex) {//todo:目前这个送得太频繁了，稍后需要控制一下速度
+static void requestIdrFrame(int trackIndex) {
     // 如果此服务器没有已知的IDR帧请求消息，我们将通过创建参考帧失效请求来完成相同操作。
     if (!supportsIdrFrameRequest) {
         int32_t payload[3];
