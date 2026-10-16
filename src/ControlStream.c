@@ -852,7 +852,7 @@ static void requestIdrFrame(int trackIndex) {
             return;
         }
     }
-    Limelog("IDR frame request sent =============> %d\n",trackIndex);
+    Limelog("关键帧申请已发送，ssrc：%d\n",trackIndex);
 }
 
 static void requestInvalidateReferenceFrames(uint32_t startFrame, uint32_t endFrame,uint32_t ssrc) {
@@ -866,14 +866,13 @@ static void requestInvalidateReferenceFrames(uint32_t startFrame, uint32_t endFr
     payload[2] = ssrc;
 
     // Send the reference frame invalidation request and read the response
-    if (!sendMessageAndDiscardReply(packetTypes[IDX_INVALIDATE_REF_FRAMES],
-                                    sizeof(payload),payload)) {
+    if (!sendMessageAndDiscardReply(packetTypes[IDX_INVALIDATE_REF_FRAMES], sizeof(payload),payload)) {
         Limelog("Request Invalidate Reference Frames: Transaction failed: %d\n", (int)LastSocketError());
         ListenerCallbacks.connectionTerminated(LastSocketFail());
         return;
     }
 
-    Limelog("Invalidate reference frame request sent (%d to %d)\n", startFrame, endFrame);
+    Limelog("RFI帧申请已经发送(%d to %d)，ssrc:%d\n", startFrame, endFrame,ssrc);
 }
 
 static void confirmLongtermReferenceFrame(uint32_t trackIndex,uint32_t frameIndex) {
