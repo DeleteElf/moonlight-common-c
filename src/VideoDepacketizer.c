@@ -828,8 +828,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
         if (isBefore32(depacketizer->nextFrameNumber, frameIndex)) {
             if (depacketizer->nextFrameNumber + 1 == frameIndex) {
                 Limelog("解包器【%d】检测到从网络中接收的数据中，丢失了一帧视频数据(frame %d)\n",depacketizer->trackIndex,frameIndex - 1);
-            }
-            else {
+            } else {
                 Limelog("解包器【%d】检测到从网络中接收的数据中，丢失了[%d]帧视频数据 (frames %d to %d)\n",
                         depacketizer->trackIndex,frameIndex - depacketizer->nextFrameNumber,
                         depacketizer->nextFrameNumber,frameIndex - 1);
@@ -1077,7 +1076,7 @@ static void processRtpPayload(PVIDEO_DEPACKETIZER depacketizer,PNV_VIDEO_PACKET 
             else {
                 // If we need an RFI frame first, then drop this frame
                 // and update the reference frame invalidation window.
-                Limelog("等待RFI帧（参考帧）,ssrc:%d\n",depacketizer->trackIndex);
+//                Limelog("等待RFI帧（参考帧）,ssrc:%d\n",depacketizer->trackIndex);
                 connectionDetectedFrameLoss(depacketizer->trackIndex,depacketizer->startFrameNumber, frameIndex);
             }
 
