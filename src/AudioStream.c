@@ -35,10 +35,8 @@ typedef struct _QUEUED_AUDIO_PACKET {
 
 static void AudioPingThreadProc(void* context) {
     char legacyPingData[] = { 0x50, 0x49, 0x4E, 0x47 };
-    // We do not check for errors here. Socket errors will be handled
-    // on the read-side in ReceiveThreadProc(). This avoids potential
-    // issues related to receiving ICMP port unreachable messages due
-    // to sending a packet prior to the host PC binding to that port.
+    // 我们在此不检查错误。套接字错误将在ReceiveThreadProc（）的读取端处理。
+    // 这避免了由于在主机PC绑定到该端口之前发送数据包而导致的与接收ICMP端口不可达消息相关的潜在问题。
     int pingCount = 0;
     while (!PltIsThreadInterrupted(&udpPingThread)) {
         if (AudioPingPayload.payload[0] != 0) {
