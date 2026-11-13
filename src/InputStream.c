@@ -860,6 +860,21 @@ int LiSendKeyboardEvent2(short keyCode, char keyAction, char modifiers, char fla
     err = LbqOfferQueueItem(&packetQueue, holder, &holder->entry);
     if (err != LBQ_SUCCESS) {
         LC_ASSERT(err == LBQ_BOUND_EXCEEDED);
+        if (keyAction == KEY_ACTION_UP) {
+            // 重试等待队列有空间
+            for (int retry = 0; retry < 10 && !PltIsThreadInterrupted(&inputSendThread); retry++) {
+                PltSleepMs(5);
+                err = LbqOfferQueueItem(&packetQueue, holder, &holder->entry);
+                if (err == LBQ_SUCCESS) {
+                    return 0;
+                }
+            }
+            // 仍然失败，强制同步发送（绕过队列）
+            Limelog("键盘队列满了，并且已经重试了10次，启用直接强制发送！！keycode: %04x\n", keyCode);
+            sendInputPacket(holder, false);
+            freePacketHolder(holder);
+            return 0;
+        }
         Limelog("Input queue reached maximum size limit\n");
         freePacketHolder(holder);
     }
