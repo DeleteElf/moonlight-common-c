@@ -834,7 +834,7 @@ int LiSendKeyboardEvent2(short keyCode, char keyAction, char modifiers, char fla
         Limelog("Input queue reached maximum size limit\n");
         freePacketHolder(holder);
     }
-    Limelog("keycode 入队: %04x    %d\n", keyCode,(int)keyAction);
+//    Limelog("keycode 入队: %04x    %d\n", keyCode,(int)keyAction);
     return err;
 }
 

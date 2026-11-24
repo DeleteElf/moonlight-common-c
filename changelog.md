@@ -1,4 +1,7 @@
 ### 版本变更日志
+#### 1.0.26.112401
+1. 去掉了鼠标的同坐标检查。
+
 #### 1.0.26.101601
 1. waitingForIdrFrame作为是否正在等待关键帧的标识，waitingForNextSuccessfulFrame作为是否需要申请关键帧的标识
 
