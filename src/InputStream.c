@@ -697,13 +697,13 @@ int LiSendMousePositionEvent(short displayIndex, short x, short y, short referen
     PltLockMutex(&batchedInputMutex);
     // 1. 必须在加锁之后检查，确保线程安全
     // 2. 同时比对 displayIndex, x, y 以及参考宽高（防止分辨率切换时漏掉更新）
-    if (currentAbsoluteMouseState.displayIndex == displayIndex &&
-        currentAbsoluteMouseState.x == x && currentAbsoluteMouseState.y == y &&
-        currentAbsoluteMouseState.width == referenceWidth &&
-        currentAbsoluteMouseState.height == referenceHeight) {
-        PltUnlockMutex(&batchedInputMutex);
-        return 0; // 坐标和分辨率都没有变化，直接跳过
-    }
+//    if (currentAbsoluteMouseState.displayIndex == displayIndex &&
+//        currentAbsoluteMouseState.x == x && currentAbsoluteMouseState.y == y &&
+//        currentAbsoluteMouseState.width == referenceWidth &&
+//        currentAbsoluteMouseState.height == referenceHeight) {
+//        PltUnlockMutex(&batchedInputMutex);
+//        return 0; // 坐标和分辨率都没有变化，直接跳过
+//    }
     // 用新的鼠标位置覆盖之前的鼠标位置
     currentAbsoluteMouseState.displayIndex=displayIndex;
     currentAbsoluteMouseState.x = x;
